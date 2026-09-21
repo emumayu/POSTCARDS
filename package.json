@@ -1,0 +1,9 @@
+{
+  "name": "postcards-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "POSTCARDS static site + Netlify Functions for Stripe Checkout.",
+  "dependencies": {
+    "stripe": "^17.4.0"
+  }
+}
