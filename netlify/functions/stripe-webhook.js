@@ -50,7 +50,7 @@ exports.handler = async (event) => {
     //   session.id
     //   session.customer_details?.email
     //   session.amount_total, session.currency
-    //   session.metadata.plan / .region / .city / .wl
+    //   session.metadata.plan / .region / .city / .wl / .days / .amount
     console.log("checkout.session.completed", {
       id: session.id,
       email: session.customer_details && session.customer_details.email,

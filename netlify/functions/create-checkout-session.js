@@ -11,7 +11,12 @@
 // code change or redeploy of this function is required.
 
 const Stripe = require("stripe");
+const { FULL_PLAN_PRICES, CURRENCY } = require("./lib/pricing");
 
+// FULL PLAN is priced by number of days (see lib/pricing.js) and is charged with an
+// inline price built from that table, so it does not use a Price ID.
+// 1 DAY PLAN and FULL LIST keep using the Price IDs below.
+//
 // region -> plan -> env var name holding the Stripe Price ID
 const PRICE_ENV = {
   jp: {
@@ -56,26 +61,66 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: `Unknown plan "${plan}".` }) };
   }
 
-  const envVarName = PRICE_ENV[region][plan];
-  const priceId = process.env[envVarName];
+  let lineItems;
+  let days = null;
+  let amount = null;
 
-  if (!priceId) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: `${envVarName} is not set in Netlify environment variables.` }),
-    };
+  if (plan === "full") {
+    // Price depends on the number of days. The amount comes from lib/pricing.js only.
+    days = Number.parseInt(payload.days, 10);
+    amount = FULL_PLAN_PRICES[days];
+    if (!Number.isInteger(days) || !amount) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: `Unknown number of days "${payload.days}" for the Full Plan.` }),
+      };
+    }
+    // The page sends the price it showed the buyer. If it doesn't match what we are about
+    // to bill, stop instead of charging a different amount than the one on screen.
+    if (payload.amount !== undefined && Number(payload.amount) !== amount) {
+      return {
+        statusCode: 409,
+        body: JSON.stringify({ error: "The price for this plan has changed. Please reload the page and try again." }),
+      };
+    }
+    lineItems = [
+      {
+        price_data: {
+          currency: CURRENCY,
+          unit_amount: amount,
+          product_data: {
+            name: `POSTCARDS Full Plan \u00b7 ${days} days`,
+            description: payload.city ? `${payload.city} \u00b7 ${days}-day guide` : `${days}-day guide`,
+          },
+        },
+        quantity: 1,
+      },
+    ];
+  } else {
+    const envVarName = PRICE_ENV[region][plan];
+    const priceId = process.env[envVarName];
+
+    if (!priceId) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: `${envVarName} is not set in Netlify environment variables.` }),
+      };
+    }
+    lineItems = [{ price: priceId, quantity: 1 }];
   }
 
   const origin = event.headers.origin || `https://${event.headers.host}`;
 
   const successParams = new URLSearchParams({ stripe: "success", plan, region });
+  if (days) successParams.set("days", String(days));
+  if (amount) successParams.set("amount", String(amount));
   if (payload.city) successParams.set("city", payload.city);
   if (payload.wl) successParams.set("wl", payload.wl);
 
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      line_items: [{ price: priceId, quantity: 1 }],
+      line_items: lineItems,
       allow_promotion_codes: true,
       success_url: `${origin}/?${successParams.toString()}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?stripe=cancel`,
@@ -84,6 +129,8 @@ exports.handler = async (event) => {
         region,
         city: payload.city || "",
         wl: payload.wl || "",
+        days: days ? String(days) : "",
+        amount: amount ? String(amount) : "",
       },
     });
 
