@@ -862,6 +862,26 @@ Error generating stack: `+l.message+`
   .pc .home2 .fx[data-s="ABJ"] .g.cp > p::after { content:""; }
   .pc .home2 .fx[data-s="QAJ"] .g.qa > p::after, .pc .home2 .fx[data-s="CTJ"] .g.cp > p::after { content:""; }
 }
+/* ===== phone: photo rows move like the PC version (stay / cafe / restaurant / art gallery) ===== */
+@media (max-width:760px) {
+  .pc .home2 .fx.stay { display:block; padding:48px 0 56px; }
+  .pc .home2 .fx.stay [data-k="TOP7.lab"] { display:block; padding:0 20px; font-size:28px; margin:0 0 22px; }
+  .pc .home2 .fx.cat .mq, .pc .home2 .fx.stay .mq { display:flex; position:relative; left:auto; top:auto; height:auto; width:max-content; margin-left:20px; animation:pcRowM 36s linear infinite; will-change:transform; }
+  .pc .home2 .fx.cat .mq > .g, .pc .home2 .fx.stay .mq > .g { display:flex; flex:none; align-items:flex-start; gap:14px; padding:0 14px 0 0; overflow:visible; position:static; width:auto; height:auto; }
+  .pc .home2 .fx.cat .mq > .g.dup, .pc .home2 .fx.stay .mq > .g.dup { display:flex !important; }
+  .pc .home2 .fx.cat .g.item .ph, .pc .home2 .fx.stay .g.item .ph { position:relative; }
+  .pc .home2 .fx.cat .g.item { flex:0 0 46vw; }
+  .pc .home2 .fx.cat .g.item .ph { width:46vw; height:69vw; }
+  .pc .home2 .fx.stay .g.item { flex:none; }
+  .pc .home2 .fx.stay .g.i1 { width:35.7vw; }
+  .pc .home2 .fx.stay .g.i2, .pc .home2 .fx.stay .g.i3 { width:75vw; }
+}
+@keyframes pcRowM { from { transform:translate3d(0,0,0); } to { transform:translate3d(-33.3333%,0,0); } }
+@media (max-width:760px) and (prefers-reduced-motion:reduce) {
+  .pc .home2 .fx.cat, .pc .home2 .fx.stay { overflow-x:auto; }
+  .pc .home2 .fx.cat .mq, .pc .home2 .fx.stay .mq { animation:none; }
+  .pc .home2 .fx.cat .mq > .g.dup, .pc .home2 .fx.stay .mq > .g.dup { display:none !important; }
+}
 
 
 /* ===== INNER SCREENS (Figma naka1-10) ===== */
@@ -1316,7 +1336,7 @@ function pcLangSet(v){try{sessionStorage.setItem("pc_lang",v)}catch(e){}}
 function PcInfo({kind,lang,onClose}){var h=m.default.createElement,ja=lang==="ja",html=kind==="faq"?(ja?PC_QA_JA:PC_QA_EN):kind==="about"?(ja?PC_AB_JA:PC_AB_EN):(ja?PC_CT_JA:PC_CT_EN);return h("div",{className:"pageoverlay pc-info"},h("button",{className:"menuclose",onClick:onClose,"aria-label":"Close"},"\u00D7"),h("div",{className:"home2",lang:ja?"ja":"en",dangerouslySetInnerHTML:{__html:html}}))}
 function PcHome({onDay,onFull,onList,onPg,fullFrom,fullCur}){var h=m.default.createElement,ref=(0,m.useRef)(null);
 (0,m.useEffect)(function(){var el=ref.current&&ref.current.querySelector('[data-k="TOP11.p1"]');if(el)el.textContent="From "+pcFmtC(fullFrom||(fullCur==="usd"?26:4000),fullCur||"jpy")+" + tax"},[fullFrom,fullCur]);
-(0,m.useEffect)(function(){var root=ref.current;if(!root)return;var rm=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;if(rm)return;
+(0,m.useEffect)(function(){var root=ref.current;if(!root)return;var rm=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;if(rm)return;/* phone rows now loop with CSS, same as the PC version */return;
 /* phone: each row of photos slowly slides to the left by itself, forever (the row is doubled so it loops without a jump).
    Touching the row pauses it for a moment; it only moves while visible. */
 var mq=window.matchMedia("(max-width:760px)"),strips=[].slice.call(root.querySelectorAll(".fx.cat .mq > .g.strip:not(.dup)")),st=strips.map(function(el){return {el:el,vis:!1,idle:0,pos:0,set:0,mt:0}}),raf=0,last=0,SPEED=15,cleans=[];
