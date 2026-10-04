@@ -9,17 +9,18 @@
 //
 // To change a price, edit the number here and deploy. Nothing else needs to change.
 //
-// NOTE: placeholder values — derived from the existing prices (1 Day Plan
-// = ¥2,000 per day, Full Plan = ¥4,000 = 2 days). Replace with the real
-// price list before selling.
+// Prices come from the "How many days?" screen of the design (¥ before tax).
+// 1 DAY (¥2,700, early launch ¥2,000) is a separate product (1 Day Plan) and uses its Stripe Price ID.
 //
 // "+ tax" on the site is display wording only: Stripe charges exactly the
 // number below (it does not add tax on top).
 const FULL_PLAN_PRICES = {
   2: 4000,
-  3: 6000,
-  4: 8000,
-  5: 10000,
+  3: 5500,
+  4: 6500,
+  5: 7500,
+  6: 8500,
+  7: 9500,
 };
 
 const CURRENCY = "jpy"; // JPY has no minor unit: 4000 means ¥4,000
