@@ -11,11 +11,11 @@
 // code change or redeploy of this function is required.
 
 const Stripe = require("stripe");
-const { FULL_PLAN_PRICES, CURRENCY } = require("./lib/pricing");
+const { FULL_PLAN, regionOf, minorUnits } = require("./lib/pricing");
 
-// FULL PLAN is priced by number of days (see lib/pricing.js) and is charged with an
-// inline price built from that table, so it does not use a Price ID.
-// 1 DAY PLAN and FULL LIST keep using the Price IDs below.
+// FULL PLAN is priced by number of days: one Stripe Price per day count and region, listed in
+// lib/pricing.js (JPY for "jp", USD for "intl"). 1 DAY PLAN and FULL LIST keep using the
+// Price IDs stored in the environment variables below (unchanged).
 //
 // region -> plan -> env var name holding the Stripe Price ID
 const PRICE_ENV = {
@@ -64,38 +64,44 @@ exports.handler = async (event) => {
   let lineItems;
   let days = null;
   let amount = null;
+  let currency = null;
 
   if (plan === "full") {
-    // Price depends on the number of days. The amount comes from lib/pricing.js only.
+    // One Stripe Price per number of days (JPY for the Japanese site, USD for the English site).
     days = Number.parseInt(payload.days, 10);
-    amount = FULL_PLAN_PRICES[days];
-    if (!Number.isInteger(days) || !amount) {
+    const table = FULL_PLAN[regionOf(region)];
+    const entry = table.days[days];
+    if (!Number.isInteger(days) || !entry) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: `Unknown number of days "${payload.days}" for the Full Plan.` }),
       };
     }
-    // The page sends the price it showed the buyer. If it doesn't match what we are about
-    // to bill, stop instead of charging a different amount than the one on screen.
+    amount = entry.amount;
+    currency = table.currency;
+    // The page sends the price it showed the buyer. If it doesn't match, stop instead of
+    // charging a different amount than the one on screen.
     if (payload.amount !== undefined && Number(payload.amount) !== amount) {
       return {
         statusCode: 409,
         body: JSON.stringify({ error: "The price for this plan has changed. Please reload the page and try again." }),
       };
     }
-    lineItems = [
-      {
-        price_data: {
-          currency: CURRENCY,
-          unit_amount: amount,
-          product_data: {
-            name: `POSTCARDS Full Plan \u00b7 ${days} days`,
-            description: payload.city ? `${payload.city} \u00b7 ${days}-day guide` : `${days}-day guide`,
-          },
-        },
-        quantity: 1,
-      },
-    ];
+    // Make sure the Stripe Price still is what we think it is (amount, currency, active).
+    try {
+      const pr = await stripe.prices.retrieve(entry.id);
+      if (!pr || pr.active === false || pr.currency !== currency || pr.unit_amount !== minorUnits(currency, amount)) {
+        console.error("FULL PLAN price mismatch", { id: entry.id, expected: { currency, amount }, stripe: pr && { currency: pr.currency, unit_amount: pr.unit_amount, active: pr.active } });
+        return {
+          statusCode: 500,
+          body: JSON.stringify({ error: `The Stripe price for ${days} days (${entry.id}) doesn't match the price on the site. Please contact us.` }),
+        };
+      }
+    } catch (err) {
+      console.error("FULL PLAN price lookup failed:", err);
+      return { statusCode: 500, body: JSON.stringify({ error: `Couldn't check the Stripe price for ${days} days: ${err.message}` }) };
+    }
+    lineItems = [{ price: entry.id, quantity: 1 }];
   } else {
     const envVarName = PRICE_ENV[region][plan];
     const priceId = process.env[envVarName];
@@ -131,6 +137,7 @@ exports.handler = async (event) => {
         wl: payload.wl || "",
         days: days ? String(days) : "",
         amount: amount ? String(amount) : "",
+        currency: currency || "",
       },
     });
 
