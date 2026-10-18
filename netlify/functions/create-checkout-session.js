@@ -137,6 +137,11 @@ exports.handler = async (event) => {
       // Always create a Stripe Customer (guest checkout, no login): lets us manage buyers in Stripe
       // and link them to public.customers by e-mail.
       customer_creation: "always",
+      // Managed Payments (Stripe as the seller of record: it calculates, collects and files tax; +3.5% per sale).
+      // Used for the English / international site, where foreign VAT / GST would otherwise fall on us.
+      // The Japanese site is not charged through it (domestic tax is handled by us, and no extra fee).
+      // Products used with it need an eligible tax code (see scripts/create-sandbox-prices.js).
+      managed_payments: { enabled: region === "intl" },
       allow_promotion_codes: true,
       success_url: `${origin}/?${successParams.toString()}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?stripe=cancel`,
