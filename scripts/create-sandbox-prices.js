@@ -7,7 +7,8 @@
 //   read -s STRIPE_SECRET_KEY && export STRIPE_SECRET_KEY     # paste the sk_test_... key (nothing is shown)
 //   node scripts/create-sandbox-prices.js [--dry-run]
 //
-// Safe to run again: every Price has a lookup_key, so existing ones are reused (nothing is created twice).
+// Safe to run again: every Price has a lookup_key, so existing ones are reused (nothing is created twice),
+// and the products get the live tax code (txcd_10302000) if they don't have it yet.
 // Amounts come from netlify/functions/lib/pricing.js (FULL PLAN) and the table below (1 DAY / FULL LIST).
 
 const fs = require("fs");
@@ -40,6 +41,8 @@ for (const r of Object.keys(FULL_PLAN)) {
     plan.push(["full", `STRIPE_PRICE_${REGION_ENV[r]}_FULL_${d}`, `postcards_${r}_full_${d}`, FULL_PLAN[r].currency, v.amount, `FULL PLAN ${d} DAYS (${r})`]);
   }
 }
+// Tax code of the live products (Managed Payments needs an eligible one on every product used with it).
+const TAX_CODE = "txcd_10302000";
 const PRODUCTS = { day: "POSTCARDS 1 DAY PLAN", full: "POSTCARDS FULL PLAN", list: "POSTCARDS FULL LIST" };
 
 (async () => {
@@ -52,7 +55,9 @@ const PRODUCTS = { day: "POSTCARDS 1 DAY PLAN", full: "POSTCARDS FULL PLAN", lis
   const products = {};
   for (const [k, name] of Object.entries(PRODUCTS)) {
     const found = await stripe.products.search({ query: `active:'true' AND metadata['postcards_plan']:'${k}'`, limit: 1 });
-    products[k] = found.data[0] || (await stripe.products.create({ name, metadata: { postcards_plan: k } }));
+    let prod = found.data[0] || (await stripe.products.create({ name, tax_code: TAX_CODE, metadata: { postcards_plan: k } }));
+    if (!prod.tax_code || (prod.tax_code.id || prod.tax_code) !== TAX_CODE) prod = await stripe.products.update(prod.id, { tax_code: TAX_CODE });
+    products[k] = prod;
     console.log(`product ${k}: ${products[k].id}`);
   }
   const lines = [];
