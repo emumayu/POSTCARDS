@@ -131,11 +131,23 @@ async function syncPurchase(stripe, sessionId, opts) {
   const now = new Date().toISOString();
   const paidLike = state === "paid" || state === "partially_refunded" || state === "refunded";
   const email = s.customer_details && s.customer_details.email ? String(s.customer_details.email).trim().toLowerCase() : null;
+  const stripeCustomerId = typeof s.customer === "string" ? s.customer : (s.customer && s.customer.id) || null;
+  // Guest buyer record (no login): find-or-create by e-mail. A failure is retried (Webhook 500).
+  let customerId = null;
+  if (email) {
+    try {
+      customerId = await db.rpc("upsert_customer", { p_email: email, p_stripe_customer_id: stripeCustomerId });
+    } catch (err) {
+      throw new PurchaseError(`Customer upsert failed: ${err.message}`, false);
+    }
+  }
   const row = {
     stripe_session_id: s.id,
     plan_type: plan,
     status: state,
     email,
+    customer_id: customerId,
+    stripe_customer_id: stripeCustomerId,
     city: md.city || null,
     region,
     days,

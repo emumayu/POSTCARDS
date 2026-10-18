@@ -127,6 +127,9 @@ exports.handler = async (event) => {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: lineItems,
+      // Always create a Stripe Customer (guest checkout, no login): lets us manage buyers in Stripe
+      // and link them to public.customers by e-mail.
+      customer_creation: "always",
       allow_promotion_codes: true,
       success_url: `${origin}/?${successParams.toString()}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?stripe=cancel`,
