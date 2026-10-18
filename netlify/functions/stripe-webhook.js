@@ -1,16 +1,40 @@
 // netlify/functions/stripe-webhook.js
 //
-// Receives events directly from Stripe's servers (independent of the buyer's
-// browser). This is the source of truth that a payment really happened —
-// unlike the browser redirect back to success_url, which a user could in
-// theory skip or fake, this request is cryptographically signed by Stripe.
+// Stripe → POSTCARDS. Signature is verified first (unchanged). Then, for the events below,
+// the purchase is re-read from Stripe and recorded by lib/purchase.js (the Webhook payload
+// itself is never trusted), with duplicate-delivery protection from v7 claim_stripe_event():
+//   1. claim_stripe_event(event.id, …)  false → already done / being processed → 200, nothing to do
+//   2. syncPurchase(session)            the same code verify-session.js uses (card and PayPay alike)
+//   3. success → stripe_events.status='done'
+//      failure → stripe_events.status='failed' + error, reply 500 so Stripe retries
+//                (a permanent problem — not a POSTCARDS purchase, price mismatch — replies 200)
 //
-// Point this URL at Stripe: https://<your-site>/.netlify/functions/stripe-webhook
-// and subscribe it to the "checkout.session.completed" event in the Stripe
-// Dashboard (Developers -> Webhooks). Stripe will give you a signing secret
-// (whsec_...) — put that in Netlify as STRIPE_WEBHOOK_SECRET.
+// Events to enable on the Stripe endpoint:
+//   checkout.session.completed, checkout.session.async_payment_succeeded,
+//   checkout.session.async_payment_failed, charge.refunded
 
 const Stripe = require("stripe");
+const db = require("./lib/supabase");
+const { syncPurchase, sessionIdForPaymentIntent } = require("./lib/purchase");
+
+const HANDLED = new Set([
+  "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+  "checkout.session.async_payment_failed",
+  "charge.refunded",
+]);
+
+const reply = (statusCode, body) => ({ statusCode, body: JSON.stringify(body) });
+
+async function finish(eventId, ok, error) {
+  try {
+    await db.update(`stripe_events?id=eq.${encodeURIComponent(eventId)}`, ok
+      ? { status: "done", processed_at: new Date().toISOString(), error: null }
+      : { status: "failed", error: String(error || "").slice(0, 500) });
+  } catch (err) {
+    console.error("stripe-webhook: could not update stripe_events", eventId, err.message);
+  }
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -40,25 +64,51 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: `Webhook Error: ${err.message}` };
   }
 
-  if (stripeEvent.type === "checkout.session.completed") {
-    const session = stripeEvent.data.object;
-
-    // At this point the payment is confirmed. There is no database or email
-    // service wired up yet, so for now this just logs the purchase — but
-    // this is the correct place to add that fulfillment logic later
-    // (e.g. record the purchase, email the PDF guide, grant access), using:
-    //   session.id
-    //   session.customer_details?.email
-    //   session.amount_total, session.currency
-    //   session.metadata.plan / .region / .city / .wl / .days / .amount
-    console.log("checkout.session.completed", {
-      id: session.id,
-      email: session.customer_details && session.customer_details.email,
-      amount_total: session.amount_total,
-      currency: session.currency,
-      metadata: session.metadata,
-    });
+  if (!HANDLED.has(stripeEvent.type)) {
+    return reply(200, { received: true, ignored: stripeEvent.type });
   }
 
-  return { statusCode: 200, body: JSON.stringify({ received: true }) };
+  const obj = stripeEvent.data.object || {};
+  const isCharge = stripeEvent.type === "charge.refunded";
+  const paymentIntent = isCharge ? obj.payment_intent : (typeof obj.payment_intent === "string" ? obj.payment_intent : null);
+
+  let sessionId = isCharge ? null : obj.id;
+  try {
+    if (isCharge) sessionId = await sessionIdForPaymentIntent(stripe, paymentIntent);
+  } catch (err) {
+    console.error("stripe-webhook: session lookup failed", stripeEvent.id, err.message);
+    return reply(500, { error: "lookup failed" });
+  }
+
+  let claimed;
+  try {
+    claimed = await db.rpc("claim_stripe_event", {
+      p_id: stripeEvent.id,
+      p_type: stripeEvent.type,
+      p_session: sessionId,
+      p_payment_intent: paymentIntent,
+    });
+  } catch (err) {
+    console.error("stripe-webhook: claim failed", stripeEvent.id, err.message);
+    return reply(500, { error: "database unavailable" });
+  }
+  if (!claimed) return reply(200, { received: true, duplicate: true });
+
+  try {
+    if (!sessionId) {
+      const e = new Error(`No Checkout Session for ${stripeEvent.type} (${paymentIntent || "no payment_intent"}).`);
+      e.permanent = true;
+      throw e;
+    }
+    const { state } = await syncPurchase(stripe, sessionId, {
+      asyncFailed: stripeEvent.type === "checkout.session.async_payment_failed",
+    });
+    await finish(stripeEvent.id, true);
+    console.log("stripe-webhook:", stripeEvent.type, sessionId, "->", state);
+    return reply(200, { received: true, state });
+  } catch (err) {
+    console.error("stripe-webhook: processing failed", stripeEvent.id, err.message);
+    await finish(stripeEvent.id, false, err.message);
+    return err.permanent ? reply(200, { received: true, error: "not processed" }) : reply(500, { error: "processing failed" });
+  }
 };

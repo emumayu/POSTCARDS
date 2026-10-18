@@ -46,4 +46,37 @@ const minorUnits = (currency, amount) => (currency === "jpy" ? amount : Math.rou
 const amountsOf = (region) =>
   Object.fromEntries(Object.entries(FULL_PLAN[region].days).map(([d, v]) => [d, v.amount]));
 
-module.exports = { FULL_PLAN, regionOf, minorUnits, amountsOf };
+// ---------------------------------------------------------------------------
+// 1 DAY PLAN and FULL LIST: Price IDs come from the Netlify environment variables
+// (the same ones create-checkout-session.js bills with). Their amounts are read from
+// Stripe itself (see get-pricing.js), so the site never shows a price Stripe doesn't charge.
+const SIMPLE_PRICE_ENV = {
+  jp: { day: "STRIPE_PRICE_JP_DAY", list: "STRIPE_PRICE_JP_LIST" },
+  intl: { day: "STRIPE_PRICE_INTL_DAY", list: "STRIPE_PRICE_INTL_LIST" },
+};
+const CURRENCY = { jp: "jpy", intl: "usd" };
+
+// Display only: the struck-through "Regular" price next to the 1 DAY early launch price.
+// Japanese site only (the English site shows the sale price alone).
+const DISPLAY_REGULAR = { jp: { day: 2700 } };
+
+// The Price a paid Checkout Session must contain for this plan / region / days.
+//   -> { id, currency, amount }   amount is null for day / list (checked against Stripe itself)
+//   -> null when the combination is not sold
+function expectedPrice(plan, region, days) {
+  const r = regionOf(region);
+  if (plan === "full") {
+    const e = FULL_PLAN[r].days[days];
+    return e ? { id: e.id, currency: FULL_PLAN[r].currency, amount: e.amount } : null;
+  }
+  const env = SIMPLE_PRICE_ENV[r][plan];
+  const id = env && process.env[env];
+  return id ? { id, currency: CURRENCY[r], amount: null } : null;
+}
+
+const majorUnits = (currency, minor) => (currency === "jpy" ? minor : minor / 100);
+
+module.exports = {
+  FULL_PLAN, regionOf, minorUnits, majorUnits, amountsOf,
+  SIMPLE_PRICE_ENV, CURRENCY, DISPLAY_REGULAR, expectedPrice,
+};
