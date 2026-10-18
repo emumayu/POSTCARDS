@@ -8,7 +8,8 @@
 //   SUPABASE_SECRET_KEY  sb_secret_...  (or the legacy service_role JWT)
 
 function cfg() {
-  const url = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+  // Accept the bare project URL, but also tolerate a pasted "/rest/v1" suffix.
+  const url = (process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "").replace(/\/rest\/v1$/, "");
   const key = process.env.SUPABASE_SECRET_KEY || "";
   if (!url || !key) {
     const err = new Error("Supabase is not configured (SUPABASE_URL / SUPABASE_SECRET_KEY).");
