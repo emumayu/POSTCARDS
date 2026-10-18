@@ -2,7 +2,8 @@
 //
 // POST { session_id }  — called by the page when the buyer returns from Stripe Checkout.
 // Never trusts the URL: the purchase is re-read from Stripe (lib/purchase.js) and recorded.
-//   200 { status:"paid", key, purchase, trip }   paid: a device key is issued (v7 issue_checkout_key)
+//   200 { status:"paid", key, purchase, trip, email_hint }   paid: a device key is issued (v7 issue_checkout_key)
+//        and the confirmation e-mail is sent once; email_hint ("ab***@example.com") is "" if it could not be sent
 //   202 { status:"pending" }                      payment not confirmed yet (e.g. PayPay) — ask again
 //   402 { status:"unpaid"|"failed"|"refunded"|"partially_refunded" }
 //   409 { status:"paid", reissue:false }          already opened on another device more than 2h after payment
@@ -13,6 +14,7 @@ const db = require("./lib/supabase");
 const { newKey, hashKey } = require("./lib/keys");
 const { syncPurchase, PurchaseError } = require("./lib/purchase");
 const { json } = require("./lib/http");
+const { sendReceiptOnce, maskEmail } = require("./lib/receipt");
 
 const publicPurchase = (p) => ({
   id: p.id, plan: p.plan_type, days: p.days, city: p.city, region: p.region,
@@ -54,7 +56,10 @@ exports.handler = async (event) => {
       const t = await db.select(`trips?purchase_id=eq.${row.id}&select=title,itinerary,city,days,traveler,tags,version,updated_at`);
       trip = Array.isArray(t) && t[0] ? t[0] : null;
     }
-    return json(200, { status: "paid", key, purchase: publicPurchase(row), trip });
+    // Confirmation e-mail (once per purchase). The page shows where it went only when it really was sent.
+    const receipt = await sendReceiptOnce(row, event).catch((e) => { console.error("verify-session: receipt", e.message); return { sent: false }; });
+    const emailHint = receipt.sent || receipt.already ? maskEmail(row.email) : "";
+    return json(200, { status: "paid", key, purchase: publicPurchase(row), trip, email_hint: emailHint });
   } catch (err) {
     console.error("verify-session: key / trip failed", err.message);
     return json(500, { error: "Couldn't confirm the payment right now. Please try again." });

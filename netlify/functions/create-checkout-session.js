@@ -12,6 +12,7 @@
 
 const Stripe = require("stripe");
 const { FULL_PLAN, regionOf, minorUnits } = require("./lib/pricing");
+const { safeOrigin } = require("./lib/mail");
 
 // FULL PLAN is priced by number of days: one Stripe Price per day count and region (JPY for "jp",
 // USD for "intl"); the amounts are in lib/pricing.js and the Price IDs in STRIPE_PRICE_{JP|INTL}_FULL_<days>. 1 DAY PLAN and FULL LIST keep using the
@@ -147,6 +148,8 @@ exports.handler = async (event) => {
         days: days ? String(days) : "",
         amount: amount ? String(amount) : "",
         currency: currency || "",
+        // The site the buyer pays on: the confirmation e-mail links back to it (only this project's own hosts).
+        origin: safeOrigin(origin) || "",
       },
     });
 

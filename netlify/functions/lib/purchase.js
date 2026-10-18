@@ -18,6 +18,7 @@
 
 const { regionOf, minorUnits, expectedPrice } = require("./pricing");
 const db = require("./supabase");
+const { safeOrigin } = require("./mail");
 
 class PurchaseError extends Error {
   constructor(message, permanent = true) { super(message); this.permanent = permanent; }
@@ -149,6 +150,7 @@ async function syncPurchase(stripe, sessionId, opts) {
     customer_id: customerId,
     stripe_customer_id: stripeCustomerId,
     city: md.city || null,
+    site_origin: safeOrigin(md.origin),
     region,
     days,
     price_id: price.id,
