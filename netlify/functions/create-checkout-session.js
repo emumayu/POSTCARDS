@@ -13,8 +13,8 @@
 const Stripe = require("stripe");
 const { FULL_PLAN, regionOf, minorUnits } = require("./lib/pricing");
 
-// FULL PLAN is priced by number of days: one Stripe Price per day count and region, listed in
-// lib/pricing.js (JPY for "jp", USD for "intl"). 1 DAY PLAN and FULL LIST keep using the
+// FULL PLAN is priced by number of days: one Stripe Price per day count and region (JPY for "jp",
+// USD for "intl"); the amounts are in lib/pricing.js and the Price IDs in STRIPE_PRICE_{JP|INTL}_FULL_<days>. 1 DAY PLAN and FULL LIST keep using the
 // Price IDs stored in the environment variables below (unchanged).
 //
 // region -> plan -> env var name holding the Stripe Price ID
@@ -77,6 +77,12 @@ exports.handler = async (event) => {
         body: JSON.stringify({ error: `Unknown number of days "${payload.days}" for the Full Plan.` }),
       };
     }
+    if (!entry.id) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: `${entry.envName} is not set in Netlify environment variables.` }),
+      };
+    }
     amount = entry.amount;
     currency = table.currency;
     // The page sends the price it showed the buyer. If it doesn't match, stop instead of
@@ -127,6 +133,9 @@ exports.handler = async (event) => {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: lineItems,
+      // Always create a Stripe Customer (guest checkout, no login): lets us manage buyers in Stripe
+      // and link them to public.customers by e-mail.
+      customer_creation: "always",
       allow_promotion_codes: true,
       success_url: `${origin}/?${successParams.toString()}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?stripe=cancel`,
