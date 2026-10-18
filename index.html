@@ -1441,6 +1441,7 @@ var PC_PK="pc_purchase";
 var PC_KEYS="pc_keys",PC_CUR="pc_cur",PC_PEND="pc_pending",PC_UNSAVED="pc_unsaved";
 function pcKeysAll(){try{var a=JSON.parse(localStorage.getItem(PC_KEYS)||"[]");return Array.isArray(a)?a:[]}catch(e){return[]}}
 function pcKeyAdd(rec){try{var a=pcKeysAll().filter(function(x){return x.id!==rec.id});a.unshift(rec);localStorage.setItem(PC_KEYS,JSON.stringify(a.slice(0,30)))}catch(e){}}
+function pcKeyRemove(id){try{localStorage.setItem(PC_KEYS,JSON.stringify(pcKeysAll().filter(function(x){return x.id!==id})))}catch(e){}}
 function pcKeyOf(id){var r=pcKeysAll().find(function(x){return x.id===id});return r?r.k:null}
 function pcCurSet(v){try{v?sessionStorage.setItem(PC_CUR,JSON.stringify(v)):sessionStorage.removeItem(PC_CUR)}catch(e){}}
 function pcCurGet(){try{return JSON.parse(sessionStorage.getItem(PC_CUR)||"null")}catch(e){return null}}
@@ -1640,6 +1641,7 @@ var row=function(R,ix){var x=R.x,P=R.ok&&R.d?R.d.purchase:null,T=R.ok&&R.d?R.d.t
  if(P&&pl==="list")act=h("button",{type:"button",className:"mt-btn",onClick:function(){A.onList(P)}},"DOWNLOAD");
  else if(P&&T)act=h("button",{type:"button",className:"mt-btn",onClick:function(){A.onOpen(P,T)}},"OPEN");
  else if(P)act=h("button",{type:"button",className:"mt-btn",onClick:function(){A.onContinue(P)}},"CONTINUE");
+ else if(!R.err)act=h("button",{type:"button",className:"mt-btn",onClick:function(){pcKeyRemove(x.id);setRows(function(a){return a&&a.filter(function(y){return y.x.id!==x.id})})}},ja?"\u524a\u9664":"REMOVE");
  return h("div",{key:x.id||ix,className:"mt-row"+(P?"":R.err?" wait":" off")},h("div",{className:"mt-l"},h("p",{className:"mt-k"},name(pl,dy)+" \u00b7 "+((P&&P.city)||x.city||"")), h("p",{className:"mt-t"},T&&T.title?T.title:pl==="list"&&P?"Every place worth knowing.":R.err?(ja?"\u73fe\u5728\u78ba\u8a8d\u3067\u304d\u307e\u305b\u3093":"Can't be checked right now"):P?(ja?"\u65c5\u7a0b\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093":"Itinerary not made yet"):(ja?"\u3053\u306e\u8cfc\u5165\u306f\u73fe\u5728\u3054\u5229\u7528\u3044\u305f\u3060\u3051\u307e\u305b\u3093":"This purchase is no longer available")), h("p",{className:"mt-d"},P?when(P.paid_at||P.created_at):R.err?(ja?"\u901a\u4fe1\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u5c11\u3057\u6642\u9593\u3092\u304a\u3044\u3066\u958b\u304d\u76f4\u3057\u3066\u304f\u3060\u3055\u3044\u3002":"Couldn't connect. Please open MY TRIPS again in a little while."):"")),act)};
 return h("div",{className:"pageoverlay mt"},h("button",{className:"menuclose",onClick:A.onClose,"aria-label":"Close"},"\u00D7"),
  h("div",{className:"mt-in"},h("h2",{className:"mt-h"},"My Trips"),h("p",{className:"mt-s"},ja?"\u3053\u306e\u7aef\u672b\u3067\u8cfc\u5165\u3057\u305f\u65c5\u7a0b\u3068\u30ea\u30b9\u30c8\u3092\u958b\u3051\u307e\u3059\u3002":"Trips and lists bought on this device."),
