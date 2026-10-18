@@ -41,7 +41,13 @@ for (const r of Object.keys(FULL_PLAN)) {
 (async () => {
   const stripe = require("stripe")(KEY);
   const all = [];
-  for await (const p of stripe.prices.list({ limit: 100, expand: ["data.product"] })) all.push(p);
+  // Product names are only for display; if the key can't read Products, fall back to Prices alone.
+  try {
+    for await (const p of stripe.prices.list({ limit: 100, expand: ["data.product"] })) all.push(p);
+  } catch (e) {
+    if (all.length) throw e;
+    for await (const p of stripe.prices.list({ limit: 100 })) all.push(p);
+  }
   console.log(`Mode: ${mode}. ${all.length} prices found.\n`);
 
   const lines = [];
