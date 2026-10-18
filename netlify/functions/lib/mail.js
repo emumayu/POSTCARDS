@@ -94,11 +94,11 @@ function receiptMail(lang, p, link, withLogin) {
   const subject = ja ? "POSTCARDS：ご購入ありがとうございます" : "POSTCARDS: thank you for your purchase";
   const intro = ja ? "ご購入ありがとうございます。お支払いを確認しました。" : "Thank you for your purchase. Your payment is confirmed.";
   const how = withLogin
-    ? (ja ? "下のボタンから、購入した旅程とリストを開けます（リンクは15分間、1回だけ有効です）。あとから別の端末で開くときは、サイトの MY TRIPS でメールアドレスを入力してください。"
-          : "Use the button below to open your trips and lists (the link works once and expires in 15 minutes). To open them later on another device, enter your e-mail in MY TRIPS on the site.")
-    : (ja ? "購入した旅程とリストは、サイトの MY TRIPS からいつでも開けます。別の端末では、MY TRIPS でこのメールアドレスを入力してください。"
-          : "Your trips and lists are always available in MY TRIPS on the site. On another device, enter this e-mail address in MY TRIPS.");
-  const button = withLogin ? (ja ? "旅程を開く" : "Open my trips") : (ja ? "POSTCARDSを開く" : "Open POSTCARDS");
+    ? (ja ? "下のボタンから、購入したプランを開けます（リンクは15分間、1回だけ有効です）。旅程づくりの続きも、できあがった旅程の見直しも、ここからできます。あとから別の端末で開くときは、サイトの MY TRIPS でメールアドレスを入力してください。"
+          : "Use the button below to open your plan (the link works once and expires in 15 minutes). You can continue building your itinerary or look it over again from there. To open it later on another device, enter your e-mail in MY TRIPS on the site.")
+    : (ja ? "購入したプランは、サイトの MY TRIPS からいつでも開けます。別の端末では、MY TRIPS でこのメールアドレスを入力してください。"
+          : "Your plan is always available in MY TRIPS on the site. On another device, enter this e-mail address in MY TRIPS.");
+  const button = withLogin ? (ja ? "プランを開く" : "Open my plan") : (ja ? "POSTCARDSを開く" : "Open POSTCARDS");
   const contact = ja ? `ご不明な点は ${CONTACT} までご連絡ください。` : `Questions? Write to ${CONTACT}.`;
 
   const text = `${intro}\n\n${rows.map((r) => `${r[0]}: ${r[1]}`).join("\n")}\n\n${how}\n\n${link}\n\n${contact}\n`;
