@@ -13,8 +13,8 @@
 const Stripe = require("stripe");
 const { FULL_PLAN, regionOf, minorUnits } = require("./lib/pricing");
 
-// FULL PLAN is priced by number of days: one Stripe Price per day count and region, listed in
-// lib/pricing.js (JPY for "jp", USD for "intl"). 1 DAY PLAN and FULL LIST keep using the
+// FULL PLAN is priced by number of days: one Stripe Price per day count and region (JPY for "jp",
+// USD for "intl"); the amounts are in lib/pricing.js and the Price IDs in STRIPE_PRICE_{JP|INTL}_FULL_<days>. 1 DAY PLAN and FULL LIST keep using the
 // Price IDs stored in the environment variables below (unchanged).
 //
 // region -> plan -> env var name holding the Stripe Price ID
@@ -75,6 +75,12 @@ exports.handler = async (event) => {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: `Unknown number of days "${payload.days}" for the Full Plan.` }),
+      };
+    }
+    if (!entry.id) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: `${entry.envName} is not set in Netlify environment variables.` }),
       };
     }
     amount = entry.amount;
