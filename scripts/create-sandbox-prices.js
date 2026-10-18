@@ -7,7 +7,8 @@
 //   read -s STRIPE_SECRET_KEY && export STRIPE_SECRET_KEY     # paste the sk_test_... key (nothing is shown)
 //   node scripts/create-sandbox-prices.js [--dry-run]
 //
-// Safe to run again: every Price has a lookup_key, so existing ones are reused (nothing is created twice),
+// Safe to run again: every Price has a lookup_key, so existing ones are reused (nothing is created twice); a Price
+// whose amount changed is replaced by a new one (and the old one archived),
 // and the products get the live tax code (txcd_10302000) if they don't have it yet.
 // Amounts come from netlify/functions/lib/pricing.js (FULL PLAN) and the table below (1 DAY / FULL LIST).
 
@@ -24,7 +25,7 @@ if (!DRY && !/^(sk|rk)_test_/.test(KEY)) {
 
 // region -> { currency, unit amounts in major units }
 const SIMPLE = {
-  jp: { currency: "jpy", day: 2000, list: 5000 },
+  jp: { currency: "jpy", day: 2200, list: 5500 }, // tax-included yen prices
   intl: { currency: "usd", day: 13, list: 32 },
 };
 const minor = (currency, amount) => (currency === "jpy" ? amount : Math.round(amount * 100));
@@ -64,10 +65,15 @@ const PRODUCTS = { day: "POSTCARDS 1 DAY PLAN", full: "POSTCARDS FULL PLAN", lis
   for (const [p, env, lk, cur, amt, nick] of plan) {
     const have = await stripe.prices.list({ lookup_keys: [lk], active: true, limit: 1 });
     let price = have.data[0];
-    if (price && (price.unit_amount !== minor(cur, amt) || price.currency !== cur)) {
-      throw new Error(`Existing price ${price.id} (${lk}) has a different amount/currency; archive it in the dashboard first.`);
-    }
-    if (!price) {
+    if (price && price.currency !== cur) throw new Error(`Existing price ${price.id} (${lk}) has a different currency.`);
+    if (price && price.unit_amount !== minor(cur, amt)) {
+      // The amount changed: Stripe can't edit a Price amount, so make a new one that takes over the lookup key
+      // and archive the old one (existing purchases keep pointing at it).
+      const old = price;
+      price = await stripe.prices.create({ product: products[p].id, currency: cur, unit_amount: minor(cur, amt), lookup_key: lk, transfer_lookup_key: true, nickname: nick });
+      await stripe.prices.update(old.id, { active: false });
+      console.log(`replaced ${env} = ${price.id} (was ${old.id}, ${old.unit_amount})`);
+    } else if (!price) {
       price = await stripe.prices.create({ product: products[p].id, currency: cur, unit_amount: minor(cur, amt), lookup_key: lk, nickname: nick });
       console.log(`created ${env} = ${price.id}`);
     } else console.log(`reused  ${env} = ${price.id}`);

@@ -23,7 +23,7 @@ if (!/^(sk|rk)_(live|test)_/.test(KEY)) {
 }
 const mode = KEY.includes("_live_") ? "LIVE" : "TEST";
 
-const SIMPLE = { jp: { currency: "jpy", day: 2000, list: 5000 }, intl: { currency: "usd", day: 13, list: 32 } };
+const SIMPLE = { jp: { currency: "jpy", day: 2200, list: 5500 }, intl: { currency: "usd", day: 13, list: 32 } };
 const R = { jp: "JP", intl: "INTL" };
 const minor = (c, a) => (c === "jpy" ? a : Math.round(a * 100));
 
