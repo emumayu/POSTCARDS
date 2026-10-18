@@ -6,8 +6,7 @@
 // deletes nothing. Use a RESTRICTED key that can only read Prices (Dashboard > Developers > API keys > Create
 // restricted key > "Prices: Read") — not the full secret key.
 //
-//   read -s STRIPE_SECRET_KEY && export STRIPE_SECRET_KEY     # paste the key (nothing is shown)
-//   node scripts/list-live-prices.js
+//   node scripts/list-live-prices.js     # it asks for the key (hidden)
 //
 // A Price is matched to a variable by currency + amount (all 16 amounts are different within a currency).
 // Anything missing, duplicated or inactive is reported instead of guessed.
@@ -16,12 +15,7 @@ const fs = require("fs");
 const path = require("path");
 const { FULL_PLAN } = require("../netlify/functions/lib/pricing");
 
-const KEY = process.env.STRIPE_SECRET_KEY || "";
-if (!/^(sk|rk)_(live|test)_/.test(KEY)) {
-  console.error("Set STRIPE_SECRET_KEY to a Stripe key (a restricted read-only key is best).");
-  process.exit(1);
-}
-const mode = KEY.includes("_live_") ? "LIVE" : "TEST";
+const { getKey } = require("./prompt-key");
 
 const SIMPLE = { jp: { currency: "jpy", day: 2200, list: 5500 }, intl: { currency: "usd", day: 13, list: 32 } };
 const R = { jp: "JP", intl: "INTL" };
@@ -39,6 +33,12 @@ for (const r of Object.keys(FULL_PLAN)) {
 }
 
 (async () => {
+  const KEY = await getKey("STRIPE_SECRET_KEY", "Paste the Stripe key (a restricted read-only key is best), nothing will be shown, then press Enter: ");
+  if (!/^(sk|rk)_(live|test)_/.test(KEY)) {
+    console.error("That is not a Stripe key (it must start with sk_/rk_ and live_/test_).");
+    process.exit(1);
+  }
+  const mode = KEY.includes("_live_") ? "LIVE" : "TEST";
   const stripe = require("stripe")(KEY);
   const all = [];
   // Product names are only for display; if the key can't read Products, fall back to Prices alone.

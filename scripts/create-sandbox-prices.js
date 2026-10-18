@@ -4,8 +4,8 @@
 // Creates the POSTCARDS products and the 16 one-time Prices in the Stripe SANDBOX (test mode) and prints the
 // matching Netlify environment variables. It refuses to run with a live key.
 //
-//   read -s STRIPE_SECRET_KEY && export STRIPE_SECRET_KEY     # paste the sk_test_... key (nothing is shown)
-//   node scripts/create-sandbox-prices.js [--dry-run]
+//   node scripts/create-sandbox-prices.js [--dry-run]     # it asks for the sk_test_... / rk_test_... key (hidden)
+// (STRIPE_SECRET_KEY in the environment is used instead if it is set.)
 //
 // Safe to run again: every Price has a lookup_key, so existing ones are reused (nothing is created twice); a Price
 // whose amount changed is replaced by a new one (and the old one archived),
@@ -17,11 +17,7 @@ const path = require("path");
 const { FULL_PLAN } = require("../netlify/functions/lib/pricing");
 
 const DRY = process.argv.includes("--dry-run");
-const KEY = process.env.STRIPE_SECRET_KEY || "";
-if (!DRY && !/^(sk|rk)_test_/.test(KEY)) {
-  console.error("Set STRIPE_SECRET_KEY to a TEST-mode key (sk_test_...). Live keys are refused.");
-  process.exit(1);
-}
+const { getKey } = require("./prompt-key");
 
 // region -> { currency, unit amounts in major units }
 const SIMPLE = {
@@ -47,6 +43,11 @@ const TAX_CODE = "txcd_10302000";
 const PRODUCTS = { day: "POSTCARDS 1 DAY PLAN", full: "POSTCARDS FULL PLAN", list: "POSTCARDS FULL LIST" };
 
 (async () => {
+  const KEY = DRY ? "" : await getKey("STRIPE_SECRET_KEY", "Paste the SANDBOX key (rk_test_... / sk_test_...), nothing will be shown, then press Enter: ");
+  if (!DRY && !/^(sk|rk)_test_/.test(KEY)) {
+    console.error("That is not a TEST-mode key (it must start with sk_test_ or rk_test_). Live keys are refused.");
+    process.exit(1);
+  }
   if (DRY) {
     for (const [p, env, lk, cur, amt] of plan) console.log(`${env.padEnd(26)} ${cur} ${String(minor(cur, amt)).padStart(6)}  [${lk}] -> ${PRODUCTS[p]}`);
     console.log(`\n(dry run: ${plan.length} prices, nothing created)`);
