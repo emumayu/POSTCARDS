@@ -43,20 +43,22 @@ async function sendMail({ to, subject, html, text }) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+const CONTACT = "hello@postcardsguide.com";
+
 // The "open my trips" e-mail. lang: "ja" | "en".
 function loginLinkMail(lang, link) {
   const ja = lang === "ja";
   const subject = ja ? "POSTCARDS：旅程を開くリンク" : "POSTCARDS: your link to open your trips";
   const lines = ja
-    ? ["POSTCARDSをご利用いただきありがとうございます。", "下のリンクから、購入した旅程とリストを、この端末で開けます。", "リンクは15分間、1回だけ使えます。", "このメールに心当たりがない場合は、何もせず破棄してください。"]
-    : ["Thank you for using POSTCARDS.", "Use the link below to open your trips and lists on this device.", "The link works once and expires in 15 minutes.", "If you didn't ask for this, you can ignore this e-mail."];
+    ? ["POSTCARDSをご利用いただきありがとうございます。", "下のリンクから、購入した旅程とリストを、この端末で開けます。", "リンクは15分間、1回だけ使えます。", "このメールに心当たりがない場合は、何もせず破棄してください。", `ご不明な点は ${CONTACT} までご連絡ください。`]
+    : ["Thank you for using POSTCARDS.", "Use the link below to open your trips and lists on this device.", "The link works once and expires in 15 minutes.", "If you didn't ask for this, you can ignore this e-mail.", `Questions? Write to ${CONTACT}.`];
   const button = ja ? "旅程を開く" : "Open my trips";
   const text = `${lines.join("\n\n")}\n\n${link}\n`;
   const html = `<div style="font-family:Helvetica,Arial,'Hiragino Sans','Noto Sans JP',sans-serif;color:#2b2a22;max-width:480px;margin:0 auto;padding:24px">
 <p style="font-size:12px;letter-spacing:.18em;color:#5e5d52;margin:0 0 20px">POSTCARDS</p>
 <p style="line-height:1.7">${esc(lines[0])}<br>${esc(lines[1])}</p>
 <p style="margin:28px 0"><a href="${esc(link)}" style="background:#45412f;color:#f1f1ee;text-decoration:none;padding:14px 28px;font-size:13px;letter-spacing:.14em">${esc(button)}</a></p>
-<p style="font-size:13px;color:#5e5d52;line-height:1.7">${esc(lines[2])}<br>${esc(lines[3])}</p>
+<p style="font-size:13px;color:#5e5d52;line-height:1.7">${esc(lines[2])}<br>${esc(lines[3])}<br>${esc(lines[4])}</p>
 <p style="font-size:12px;color:#8a897f;word-break:break-all">${esc(link)}</p></div>`;
   return { subject, html, text };
 }
