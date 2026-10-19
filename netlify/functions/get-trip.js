@@ -17,7 +17,7 @@ exports.handler = async (event) => {
     if (!p) return json(403, { error: "No access." });
     let trip = null;
     if (p.plan_type !== "list") {
-      const t = await db.select(`trips?purchase_id=eq.${p.id}&select=title,itinerary,city,days,traveler,tags,version,updated_at`);
+      const t = await db.select(`trips?purchase_id=eq.${p.id}&select=title,itinerary,city,days,traveler,tags,version,updated_at,finalized_at`);
       trip = Array.isArray(t) && t[0] ? t[0] : null;
     }
     return json(200, {

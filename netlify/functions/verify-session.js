@@ -53,7 +53,7 @@ exports.handler = async (event) => {
 
     let trip = null;
     if (row.plan_type !== "list") {
-      const t = await db.select(`trips?purchase_id=eq.${row.id}&select=title,itinerary,city,days,traveler,tags,version,updated_at`);
+      const t = await db.select(`trips?purchase_id=eq.${row.id}&select=title,itinerary,city,days,traveler,tags,version,updated_at,finalized_at`);
       trip = Array.isArray(t) && t[0] ? t[0] : null;
     }
     // Confirmation e-mail (once per purchase). The page shows where it went only when it really was sent.
