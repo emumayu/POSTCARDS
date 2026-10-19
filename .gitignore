@@ -3,3 +3,4 @@ node_modules/
 .DS_Store
 .netlify/
 scripts/*-prices.env
+.sync-token.txt
