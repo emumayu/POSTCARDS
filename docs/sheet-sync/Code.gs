@@ -211,8 +211,17 @@ function stepInstagram_(t, env) {
 // ---------- 4. タグ・ひとこと（AIの下書き） ----------
 function stepDraft_(t, env) {
   need_(t, ['genre', 'tags', 'note']);
-  var targets = [];
-  t.values.forEach(function (r, i) { if (val_(t, r, 'name') && val_(t, r, 'genre') !== '' && (blank_(t, r, 'tags') || blank_(t, r, 'note'))) targets.push(i); });
+  var targets = [], nNames = 0, nGenre = 0, nTagBlank = 0, nNoteBlank = 0;
+  t.values.forEach(function (r, i) {
+    if (!val_(t, r, 'name')) return;
+    nNames++;
+    var hasG = val_(t, r, 'genre') !== '';
+    if (hasG) nGenre++;
+    if (hasG && blank_(t, r, 'tags')) nTagBlank++;
+    if (hasG && blank_(t, r, 'note')) nNoteBlank++;
+    if (hasG && (blank_(t, r, 'tags') || blank_(t, r, 'note'))) targets.push(i);
+  });
+  var diag = '\n（シート「' + t.sh.getName() + '」: 店名のある行 ' + nNames + ' / ジャンルのある行 ' + nGenre + ' / そのうちタグが空 ' + nTagBlank + '・ひとことが空 ' + nNoteBlank + '）';
   var more = targets.length > DRAFT_MAX;
   targets = targets.slice(0, DRAFT_MAX);
   var done = 0, bad = 0, errors = 0, firstError = '';
@@ -235,7 +244,7 @@ function stepDraft_(t, env) {
   });
   writeCols_(t, ['tags', 'note']);
   marks.forEach(function (m) { t.sh.getRange(m[0] + 2, t.col[m[1]] + 1).setBackground(DRAFT_COLOR); });
-  return { name: 'タグ・ひとこと（AI下書き）', text: '下書き ' + done + '件（黄色い欄）' + (bad ? ' / 作れなかった ' + bad + '件' : '') + (errors ? ' / エラー ' + errors + '件 ' + firstError : '') + (more ? '\n※まだ残りがあります。もう一度実行してください。' : '') };
+  return { name: 'タグ・ひとこと（AI下書き）', text: '下書き ' + done + '件（黄色い欄）' + (bad ? ' / 作れなかった ' + bad + '件' : '') + (errors ? ' / エラー ' + errors + '件 ' + firstError : '') + (more ? '\n※まだ残りがあります。もう一度実行してください。' : '') + diag };
 }
 
 // ---------- メニュー ----------
