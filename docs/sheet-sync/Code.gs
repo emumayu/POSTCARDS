@@ -8,6 +8,7 @@
  *   2. ジャンル・エリア・価格帯・子供OK・ペットOK … Googleの情報から
  *   3. Instagramを公式サイトから探す
  *   4. タグ・ひとことの下書き  … AIの下書き。黄色い欄は、確認してください
+ *   条件が揃った行をまとめて公開にする … ジャンル・緯度経度・タグが入っていて、閉店でない行を「公開」にする
  *   サイトに反映（開発用）/（本番） … シートの内容をSupabaseに送る
  *   接続設定                   … サイトのURLとトークンを保存する（シートには書かない）
  */
@@ -30,6 +31,8 @@ function onOpen() {
     .addItem('2. ジャンル・エリア・価格帯などを自動入力', 'menuDetails')
     .addItem('3. Instagramを公式サイトから探す', 'menuInstagram')
     .addItem('4. タグ・ひとことの下書き（AI）', 'menuDraft')
+    .addSeparator()
+    .addItem('条件が揃った行をまとめて公開にする', 'menuPublish')
     .addSeparator()
     .addItem('サイトに反映（開発用）', 'syncDev')
     .addItem('サイトに反映（本番）', 'syncProd')
@@ -257,6 +260,27 @@ function menuLookup() { runSteps_('場所情報', [stepLookup_], '店名から G
 function menuDetails() { runSteps_('ジャンル・エリア・価格帯', [stepDetails_], 'PlaceID のある行について、空欄だけを埋めます。続けますか？'); }
 function menuInstagram() { runSteps_('Instagram', [stepInstagram_], '公式サイトから Instagram のリンクを探して、空欄だけを埋めます。続けますか？'); }
 function menuDraft() { runSteps_('タグ・ひとこと', [stepDraft_], 'ジャンルのある行について、タグとひとことの下書きを AI で作ります（黄色い欄になります）。続けますか？'); }
+
+// ---------- 条件が揃った行を公開にする ----------
+function menuPublish() {
+  var ui = SpreadsheetApp.getUi(), t = table_();
+  need_(t, ['published', 'genre', 'tags', 'lat', 'lng']);
+  var ok = [], noTags = 0, noGenre = 0, noGeo = 0, closed = 0;
+  t.values.forEach(function (r, i) {
+    if (!val_(t, r, 'name') || val_(t, r, 'published') === '公開') return;
+    var st = val_(t, r, 'status');
+    if (st === 'CLOSED_PERMANENTLY' || st === 'CLOSED_TEMPORARILY') { closed++; return; }
+    if (val_(t, r, 'genre') === '') { noGenre++; return; }
+    if (val_(t, r, 'lat') === '' || val_(t, r, 'lng') === '') { noGeo++; return; }
+    if (val_(t, r, 'tags') === '') { noTags++; return; }
+    ok.push(i);
+  });
+  var msg = ok.length + '件を「公開」にします。\n\n公開にしない行:\n・閉店: ' + closed + '件\n・ジャンルが空: ' + noGenre + '件\n・緯度経度が空: ' + noGeo + '件\n・タグが空: ' + noTags + '件\n\n続けますか？（シートの「公開」列が変わるだけで、サイトへの反映は、このあと「サイトに反映」を押したときです）';
+  if (ui.alert('まとめて公開', msg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  ok.forEach(function (i) { t.values[i][t.col.published] = '公開'; });
+  writeCols_(t, ['published']);
+  ui.alert('「公開」にしました: ' + ok.length + '件。\n「サイトに反映（開発用）」を押すと、サイトに出ます。');
+}
 
 // ---------- サイトに反映 ----------
 function syncDev() { sync_('dev'); }
