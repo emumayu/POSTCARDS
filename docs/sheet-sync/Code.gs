@@ -4,6 +4,7 @@
  * 使い方は docs/sheet-sync/README.md を見てください。
  * メニュー「POSTCARDS」に、次の項目を追加します。
  *   1. 足りない情報を自動入力   … 緯度・経度・公式サイト・Googleマップ・営業状況をGoogleから取得してシートに書く
+ *      ジャンル・エリア・価格帯を自動入力 … PlaceID のある行について、ジャンル・エリア・価格帯の空欄を埋める（1.の後に実行）
  *   2. サイトに反映（開発用）   … シートの内容を開発用のSupabaseに送る
  *   3. サイトに反映（本番）     … 同じ内容を本番のSupabaseに送る
  *   4. 接続設定                 … サイトのURLとトークンを保存する（シートには書かない）
@@ -19,6 +20,7 @@ var HEADERS = {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('POSTCARDS')
     .addItem('足りない情報を自動入力', 'enrichRows')
+    .addItem('ジャンル・エリア・価格帯を自動入力', 'enrichDetails')
     .addSeparator()
     .addItem('サイトに反映（開発用）', 'syncDev')
     .addItem('サイトに反映（本番）', 'syncProd')
@@ -135,6 +137,42 @@ function enrichRows() {
   });
   ui.alert('完了', '入力できた: ' + filled + '件 / 見つからなかった: ' + notFound + '件（営業状況に NOT_FOUND と書きました）' + (errors ? ' / エラー: ' + errors + '件（もう一度実行してください）\n' + firstError : '') +
     '\n\n「照合した店名」が合っているか、目で確認してください。違う店のときは、緯度・経度・公式サイト・Googleマップの欄を直して、営業状況を空にせず残してください。', ui.ButtonSet.OK);
+}
+
+// ---------- 1b. ジャンル・エリア・価格帯の自動入力 ----------
+function enrichDetails() {
+  var ui = SpreadsheetApp.getUi(), t = table_();
+  ['genre', 'area', 'price', 'placeId'].forEach(function (k) {
+    if (t.col[k] === undefined) throw new Error('見出し「' + HEADERS[k] + '」が1行目にありません。');
+  });
+  var blank = function (r, k) { return String(r[t.col[k]]).trim() === ''; };
+  var targets = [];
+  t.values.forEach(function (r, i) {
+    if (String(r[t.col.name]).trim() && !blank(r, 'placeId') && (blank(r, 'genre') || blank(r, 'area') || blank(r, 'price'))) targets.push(i);
+  });
+  if (!targets.length) { ui.alert('対象の行はありません。\n（PlaceID があり、ジャンル・エリア・価格帯のどれかが空の行が対象です。先に「足りない情報を自動入力」を実行してください）'); return; }
+  if (ui.alert('自動入力', targets.length + '件について、ジャンル・エリア・価格帯の空欄を Google の情報で埋めます。続けますか？\n入力済みの欄は変更しません。', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  var env = PropertiesService.getDocumentProperties().getProperty('URL_dev') ? 'dev' : 'prod';
+  var g = 0, a = 0, p = 0, errors = 0, firstError = '';
+  for (var s = 0; s < targets.length; s += 10) {
+    var chunk = targets.slice(s, s + 10);
+    var rows = chunk.map(function (i) { var r = t.values[i]; return { key: r[t.col.key], placeId: r[t.col.placeId] }; });
+    var res = call_(env, { action: 'details', rows: rows });
+    if (res.code !== 200) { ui.alert('エラー（' + res.code + '）: ' + JSON.stringify(res.body).slice(0, 300)); break; }
+    res.body.results.forEach(function (x, j) {
+      var r = t.values[chunk[j]];
+      if (!x.ok) { if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; } return; }
+      if (blank(r, 'genre') && x.genre) { r[t.col.genre] = x.genre; g++; }
+      if (blank(r, 'area') && x.area) { r[t.col.area] = x.area; a++; }
+      if (blank(r, 'price') && x.price) { r[t.col.price] = x.price; p++; }
+    });
+    SpreadsheetApp.getActive().toast((s + chunk.length) + ' / ' + targets.length, '自動入力中', 5);
+  }
+  ['genre', 'area', 'price'].forEach(function (k) {
+    t.sh.getRange(2, t.col[k] + 1, t.values.length, 1).setValues(t.values.map(function (r) { return [r[t.col[k]]]; }));
+  });
+  ui.alert('完了', 'ジャンル: ' + g + '件 / エリア: ' + a + '件 / 価格帯: ' + p + '件 を入力しました。' + (errors ? '\nエラー: ' + errors + '件（もう一度実行してください）\n' + firstError : '') +
+    '\n\nジャンルは Google の分類からの推測です。違うものは直してください。ジャンルが空の行は、Google の分類が当てはまらなかった行です。手で入れてください。', ui.ButtonSet.OK);
 }
 
 // ---------- 2/3. サイトに反映 ----------
