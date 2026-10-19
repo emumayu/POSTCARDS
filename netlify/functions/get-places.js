@@ -27,7 +27,7 @@ exports.handler = async (event) => {
       if (r.pair) s.pair = r.pair;
       if (r.slot) s.slot = r.slot;
       if (r.instagram) s.instagram = r.instagram;
-      if (r.website) s.website = r.website;
+      if (r.website) { s.website = r.website; s.url = r.website; } // `url` is what the hotel links on the trip page read
       if (r.map_url) s.map = r.map_url;
       out[r.city].spots.push(s);
     }
