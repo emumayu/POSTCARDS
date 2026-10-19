@@ -33,7 +33,7 @@ async function purchaseFromKey(event) {
   const purchaseId = await db.rpc("check_device_key", { p_key_hash: hashKey(key) });
   if (!purchaseId) return null;
   const rows = await db.select(
-    `purchases?id=eq.${encodeURIComponent(purchaseId)}&select=id,stripe_session_id,plan_type,status,days,city,region,currency,amount_total,paid_at,created_at,status_checked_at`
+    `purchases?id=eq.${encodeURIComponent(purchaseId)}&select=id,stripe_session_id,plan_type,status,days,city,region,currency,amount_total,paid_at,created_at,status_checked_at,email,site_origin`
   );
   const p = Array.isArray(rows) && rows[0] ? rows[0] : null;
   if (!p || p.status !== "paid") return null;

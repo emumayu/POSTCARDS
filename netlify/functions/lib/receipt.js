@@ -12,7 +12,7 @@
 
 const db = require("./supabase");
 const { newKey, hashKey } = require("./keys");
-const { siteUrl, sendMail, receiptMail } = require("./mail");
+const { siteUrl, sendMail, receiptMail, tripSavedMail } = require("./mail");
 
 const maskEmail = (e) => {
   const [local, domain] = String(e || "").split("@");
@@ -47,4 +47,28 @@ async function sendReceiptOnce(row, event) {
   }
 }
 
-module.exports = { sendReceiptOnce, maskEmail };
+
+// The "itinerary saved" e-mail with the link to the PDF travel booklet. Called once, right after SAVE MY ITINERARY is
+// confirmed. Never throws: a mail problem must not undo the save (it is logged; the booklet stays in MY TRIPS).
+async function sendTripSavedMail(row, trip, event) {
+  try {
+    if (!row || !row.email) return { sent: false };
+    const lang = row.region === "intl" ? "en" : "ja";
+    const base = siteUrl(event, row.site_origin);
+    const token = newKey();
+    const made = await db.rpc("create_login_token", { p_email: row.email, p_token_hash: hashKey(token) });
+    const withLogin = !!(made && made.email);
+    const link = withLogin
+      ? `${base}/?login=${token}&open=${encodeURIComponent(row.id)}${lang === "ja" ? "&lang=ja" : ""}`
+      : `${base}/${lang === "ja" ? "?lang=ja" : ""}`;
+    const area = trip && trip.itinerary && trip.itinerary.area ? (lang === "ja" ? trip.itinerary.area.jp || trip.itinerary.area.en : trip.itinerary.area.en) : "";
+    const mail = tripSavedMail(lang, { title: trip && trip.title, area, city: row.city, days: row.plan_type === "day" ? 1 : row.days }, link, withLogin);
+    await sendMail({ to: row.email, subject: mail.subject, html: mail.html, text: mail.text });
+    return { sent: true };
+  } catch (err) {
+    console.error("trip-saved mail failed", row && row.id, err.message);
+    return { sent: false, error: err.message };
+  }
+}
+
+module.exports = { sendReceiptOnce, sendTripSavedMail, maskEmail };

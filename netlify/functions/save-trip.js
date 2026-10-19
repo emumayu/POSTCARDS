@@ -12,6 +12,7 @@
 const db = require("./lib/supabase");
 const { purchaseFromKey, AccessUnavailable } = require("./lib/access");
 const { json } = require("./lib/http");
+const { sendTripSavedMail } = require("./lib/receipt");
 
 const MAX_BYTES = 200 * 1024;
 const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : null);
@@ -95,6 +96,7 @@ exports.handler = async (event) => {
         saved = r[0];
       }
     }
+    if (final && saved) await sendTripSavedMail(p, { title: fields.title, itinerary }, event);   // PDF link by e-mail (never fails the save)
     return json(200, { ok: true, version: saved ? saved.version : null, updated_at: saved ? saved.updated_at : null, finalized_at: saved ? saved.finalized_at || null : null });
   } catch (err) {
     if (err instanceof AccessUnavailable) return json(503, { error: "Temporarily unavailable. Please try again shortly." });

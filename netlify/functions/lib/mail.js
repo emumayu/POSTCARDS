@@ -112,4 +112,35 @@ function receiptMail(lang, p, link, withLogin) {
   return { subject, html, text };
 }
 
-module.exports = { siteUrl, safeOrigin, sendMail, loginLinkMail, receiptMail };
+
+// "Your itinerary is saved" — sent once, when the buyer confirms SAVE MY ITINERARY. The button opens the saved
+// itinerary (one-time sign-in link + &open=<purchase id>), where the PDF travel booklet can be downloaded.
+function tripSavedMail(lang, trip, link, withLogin) {
+  const ja = lang === "ja";
+  const city = (ja && CITY_JA[trip.city]) || trip.city || "";
+  const rows = [
+    [ja ? "旅程の名前" : "Itinerary", trip.title || (ja ? "あなたの旅程" : "Your itinerary")],
+    ...(city ? [[ja ? "行き先" : "Destination", city + (trip.area ? ` · ${trip.area}` : "")]] : []),
+    ...(trip.days ? [[ja ? "日数" : "Days", ja ? `${trip.days}日間` : `${trip.days} ${trip.days === 1 ? "day" : "days"}`]] : []),
+  ];
+  const subject = ja ? "POSTCARDS：旅程を保存しました（PDFトラベルブック）" : "POSTCARDS: your itinerary is saved (PDF travel booklet)";
+  const intro = ja ? "旅程を保存しました。ありがとうございます。" : "Your itinerary is saved. Thank you.";
+  const how = withLogin
+    ? (ja ? "下のボタンから、保存した旅程を開き、PDFトラベルブックをダウンロードできます（リンクは15分間、1回だけ有効です）。あとから別の端末で開くときは、サイトの MY TRIPS でメールアドレスを入力してください。"
+          : "Use the button below to open your saved itinerary and download your PDF travel booklet (the link works once and expires in 15 minutes). To open it later on another device, enter your e-mail in MY TRIPS on the site.")
+    : (ja ? "保存した旅程とPDFトラベルブックは、サイトの MY TRIPS からいつでも開けます。別の端末では、MY TRIPS でこのメールアドレスを入力してください。"
+          : "Your saved itinerary and PDF travel booklet are always available in MY TRIPS on the site. On another device, enter this e-mail address in MY TRIPS.");
+  const button = withLogin ? (ja ? "PDFトラベルブックを開く" : "Open your PDF travel booklet") : (ja ? "POSTCARDSを開く" : "Open POSTCARDS");
+  const contact = ja ? `ご不明な点は ${CONTACT} までご連絡ください。` : `Questions? Write to ${CONTACT}.`;
+  const text = `${intro}\n\n${rows.map((r) => `${r[0]}: ${r[1]}`).join("\n")}\n\n${how}\n\n${link}\n\n${contact}\n`;
+  const html = `<div style="font-family:Helvetica,Arial,'Hiragino Sans','Noto Sans JP',sans-serif;color:#2b2a22;max-width:480px;margin:0 auto;padding:24px">
+<p style="font-size:12px;letter-spacing:.18em;color:#5e5d52;margin:0 0 20px">POSTCARDS</p>
+<p style="line-height:1.7">${esc(intro)}</p>
+<table style="border-collapse:collapse;margin:18px 0;width:100%">${rows.map((r) => `<tr><td style="padding:8px 0;border-top:1px solid #c8c7c0;font-size:12px;color:#5e5d52;width:32%">${esc(r[0])}</td><td style="padding:8px 0;border-top:1px solid #c8c7c0;font-size:14px">${esc(r[1])}</td></tr>`).join("")}<tr><td colspan="2" style="border-top:1px solid #c8c7c0"></td></tr></table>
+<p style="font-size:13px;color:#5e5d52;line-height:1.7">${esc(how)}</p>
+<p style="margin:26px 0"><a href="${esc(link)}" style="background:#45412f;color:#f1f1ee;text-decoration:none;padding:14px 28px;font-size:13px;letter-spacing:.14em">${esc(button)}</a></p>
+<p style="font-size:13px;color:#5e5d52;line-height:1.7">${esc(contact)}</p></div>`;
+  return { subject, html, text };
+}
+
+module.exports = { siteUrl, safeOrigin, sendMail, loginLinkMail, receiptMail, tripSavedMail };
