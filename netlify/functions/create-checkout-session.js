@@ -143,14 +143,15 @@ exports.handler = async (event) => {
       // Products used with it need an eligible tax code (see scripts/create-sandbox-prices.js).
       managed_payments: { enabled: region === "intl" },
       // Refund terms right above the pay button (last confirmation step; see the Legal Notice page on the site).
-      custom_text: {
-        submit: {
-          message: region === "intl"
-            ? "Digital product: refunds are not available once your itinerary is created (full refund within 14 days if it has not been created yet, or within 30 days for a problem on our side). See the Legal Notice on postcardsguide.com."
-            : "デジタル商品のため、旅程の作成後は返金できません（作成前は購入から14日以内、当方の不具合の場合は30日以内であれば返金します）。詳しくは postcardsguide.com の「特定商取引法に基づく表記」をご確認ください。",
+      // Stripe does not allow custom_text together with Managed Payments, so only the Japanese site (no Managed
+      // Payments) gets it; on the English site the terms are on the plan pages and in the Legal Notice.
+      ...(region === "intl" ? {} : {
+        custom_text: {
+          submit: {
+            message: "デジタル商品のため、旅程の作成後は返金できません（作成前は購入から14日以内、当方の不具合の場合は30日以内であれば返金します）。詳しくは postcardsguide.com の「特定商取引法に基づく表記」をご確認ください。",
+          },
         },
-      },
-      allow_promotion_codes: true,
+      }),
       success_url: `${origin}/?${successParams.toString()}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?stripe=cancel`,
       metadata: {
