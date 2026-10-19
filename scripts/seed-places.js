@@ -28,7 +28,7 @@ async function main() {
     return t;
   };
   const existing = await fetch(`${url}/rest/v1/places?select=id&limit=1`, { headers: h });
-  if (!existing.ok) throw new Error(`cannot read places (${existing.status}) — is the migration applied?`);
+  if (!existing.ok) throw new Error(`cannot read places at ${new URL(url).host} (${existing.status}): ${(await existing.text()).slice(0, 300)}\n(401/403 = this key does not belong to that project; 404 = migration not applied)`);
   if ((await existing.json()).length) { console.log("places already has rows — nothing imported."); return; }
   await call("POST", "place_cities?on_conflict=city", data.cities, { Prefer: "resolution=ignore-duplicates,return=minimal" });
   for (let i = 0; i < data.places.length; i += 100) await call("POST", "places", data.places.slice(i, i + 100));
