@@ -5,7 +5,7 @@
 // (trips.purchase_id is unique); rebuilding overwrites it and adds 1 to version.
 // With final:true the buyer has confirmed "SAVE MY ITINERARY": the row gets finalized_at and from then on every
 // further save for this purchase is refused (409) — the itinerary can no longer be rebuilt.
-//   200 { ok:true, version, updated_at, finalized_at }   403 no access   400 invalid itinerary
+//   200 { ok:true, email (final saves only), version, updated_at, finalized_at }   403 no access   400 invalid itinerary
 //   409 { error:"locked" }   the itinerary was already saved as final
 //   503 a Stripe re-check was needed and failed — nothing saved, key kept (the page retries)
 
@@ -97,7 +97,7 @@ exports.handler = async (event) => {
       }
     }
     if (final && saved) await sendTripSavedMail(p, { title: fields.title, itinerary }, event);   // PDF link by e-mail (never fails the save)
-    return json(200, { ok: true, version: saved ? saved.version : null, updated_at: saved ? saved.updated_at : null, finalized_at: saved ? saved.finalized_at || null : null });
+    return json(200, { ok: true, email: final ? (p.email || null) : null, version: saved ? saved.version : null, updated_at: saved ? saved.updated_at : null, finalized_at: saved ? saved.finalized_at || null : null });
   } catch (err) {
     if (err instanceof AccessUnavailable) return json(503, { error: "Temporarily unavailable. Please try again shortly." });
     console.error("save-trip failed", err.message);
