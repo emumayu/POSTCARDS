@@ -4,8 +4,8 @@
 //   Called from verify-session (buyer is back from Stripe) AND from the Stripe Webhook (buyer closed the tab).
 //   Whoever comes first claims purchases.receipt_sent_at with a single conditional UPDATE; the other one sees
 //   it is already claimed and does nothing. If sending fails the claim is released so the next call retries.
-//   The e-mail has a MY TRIPS login link (same one-time link as request-login-link) when the customer is still
-//   under the link limit; otherwise it just points to the site.
+//   The e-mail has a one-time MY TRIPS login link valid for 24 hours (issue_login_token: no rate limit, because the
+//   buyer just paid); it points to the site only if the customer has no paid purchase.
 //
 //   -> { sent: true }  mailed now      { already: true }  mailed (or being mailed) before
 //      { sent: false, error }  failed (logged)      { sent: false }  nothing to send (not paid / no e-mail)
@@ -33,7 +33,7 @@ async function sendReceiptOnce(row, event) {
     const lang = row.region === "intl" ? "en" : "ja";
     const base = siteUrl(event, row.site_origin);
     const token = newKey();
-    const made = await db.rpc("create_login_token", { p_email: row.email, p_token_hash: hashKey(token) });
+    const made = await db.rpc("issue_login_token", { p_email: row.email, p_token_hash: hashKey(token), p_minutes: 1440 });
     const withLogin = !!(made && made.email);
     const link = withLogin ? `${base}/?login=${token}${lang === "ja" ? "&lang=ja" : ""}` : `${base}/${lang === "ja" ? "?lang=ja" : ""}`;
     const mail = receiptMail(lang, { plan: row.plan_type, days: row.days, city: row.city, currency: row.currency, amount_total: row.amount_total }, link, withLogin);
@@ -56,7 +56,7 @@ async function sendTripSavedMail(row, trip, event) {
     const lang = row.region === "intl" ? "en" : "ja";
     const base = siteUrl(event, row.site_origin);
     const token = newKey();
-    const made = await db.rpc("create_login_token", { p_email: row.email, p_token_hash: hashKey(token) });
+    const made = await db.rpc("issue_login_token", { p_email: row.email, p_token_hash: hashKey(token), p_minutes: 1440 });
     const withLogin = !!(made && made.email);
     const link = withLogin
       ? `${base}/?login=${token}&open=${encodeURIComponent(row.id)}${lang === "ja" ? "&lang=ja" : ""}`

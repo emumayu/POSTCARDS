@@ -94,8 +94,8 @@ function receiptMail(lang, p, link, withLogin) {
   const subject = ja ? "POSTCARDS：ご購入ありがとうございます" : "POSTCARDS: thank you for your purchase";
   const intro = ja ? "ご購入ありがとうございます。お支払いを確認しました。" : "Thank you for your purchase. Your payment is confirmed.";
   const how = withLogin
-    ? (ja ? "下のボタンから、購入したプランを開けます（リンクは15分間、1回だけ有効です）。旅程づくりの続きも、できあがった旅程の見直しも、ここからできます。あとから別の端末で開くときは、サイトの MY TRIPS でメールアドレスを入力してください。"
-          : "Use the button below to open your plan (the link works once and expires in 15 minutes). You can continue building your itinerary or look it over again from there. To open it later on another device, enter your e-mail in MY TRIPS on the site.")
+    ? (ja ? "下のボタンから、購入したプランを開けます（リンクは24時間、1回だけ有効です）。旅程づくりの続きも、できあがった旅程の見直しも、ここからできます。あとから別の端末で開くときは、サイトの MY TRIPS でメールアドレスを入力してください。"
+          : "Use the button below to open your plan (the link works once and expires in 24 hours). You can continue building your itinerary or look it over again from there. To open it later on another device, enter your e-mail in MY TRIPS on the site.")
     : (ja ? "購入したプランは、サイトの MY TRIPS からいつでも開けます。別の端末では、MY TRIPS でこのメールアドレスを入力してください。"
           : "Your plan is always available in MY TRIPS on the site. On another device, enter this e-mail address in MY TRIPS.");
   const button = withLogin ? (ja ? "プランを開く" : "Open my plan") : (ja ? "POSTCARDSを開く" : "Open POSTCARDS");
@@ -126,8 +126,8 @@ function tripSavedMail(lang, trip, link, withLogin) {
   const subject = ja ? "POSTCARDS：旅程を保存しました（PDFトラベルブック）" : "POSTCARDS: your itinerary is saved (PDF travel booklet)";
   const intro = ja ? "旅程を保存しました。ありがとうございます。" : "Your itinerary is saved. Thank you.";
   const how = withLogin
-    ? (ja ? "下のボタンから、保存した旅程を開き、PDFトラベルブックをダウンロードできます（リンクは15分間、1回だけ有効です）。あとから別の端末で開くときは、サイトの MY TRIPS でメールアドレスを入力してください。"
-          : "Use the button below to open your saved itinerary and download your PDF travel booklet (the link works once and expires in 15 minutes). To open it later on another device, enter your e-mail in MY TRIPS on the site.")
+    ? (ja ? "下のボタンから、保存した旅程を開き、PDFトラベルブックをダウンロードできます（リンクは24時間、1回だけ有効です）。あとから別の端末で開くときは、サイトの MY TRIPS でメールアドレスを入力してください。"
+          : "Use the button below to open your saved itinerary and download your PDF travel booklet (the link works once and expires in 24 hours). To open it later on another device, enter your e-mail in MY TRIPS on the site.")
     : (ja ? "保存した旅程とPDFトラベルブックは、サイトの MY TRIPS からいつでも開けます。別の端末では、MY TRIPS でこのメールアドレスを入力してください。"
           : "Your saved itinerary and PDF travel booklet are always available in MY TRIPS on the site. On another device, enter this e-mail address in MY TRIPS.");
   const button = withLogin ? (ja ? "PDFトラベルブックを開く" : "Open your PDF travel booklet") : (ja ? "POSTCARDSを開く" : "Open POSTCARDS");
