@@ -54,7 +54,20 @@ for (const r of Object.keys(FULL_PLAN)) {
   let problems = 0;
   for (const [env, cur, amt] of wanted) {
     const hits = all.filter((p) => p.currency === cur && p.unit_amount === amt && p.type === "one_time");
-    const active = hits.filter((p) => p.active);
+    let active = hits.filter((p) => p.active);
+    // Same amount on more than one active Price (e.g. an old FULL PLAN price and the new FULL LIST price): use the
+    // product name to tell them apart. FULL PLAN products are named "...(<n>days)...", the FULL LIST product has no "days".
+    if (active.length > 1) {
+      const pname = (p) => (p.product && p.product.name) || "";
+      const full = /_FULL_(\d)$/.exec(env);
+      const byName = full
+        ? active.filter((p) => new RegExp(`\\(${full[1]}\\s*days?\\)`, "i").test(pname(p)))
+        : /_LIST$/.test(env) ? active.filter((p) => !/days?\)/i.test(pname(p))) : [];
+      if (byName.length === 1) {
+        console.log(`note     ${env}: ${active.length} active prices have this amount; chose the one on product "${pname(byName[0])}"`);
+        active = byName;
+      }
+    }
     const name = (p) => `${p.id} (${p.product && p.product.name ? p.product.name : "?"}${p.active ? "" : ", inactive"})`;
     if (active.length === 1) {
       lines.push(`${env}=${active[0].id}`);
