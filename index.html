@@ -1426,9 +1426,11 @@ function pcTx(){var P=PC_PRICE||{currency:"jpy"};return pcTaxIn(P.currency)}
 /* Prices on screen: FULL PLAN from lib/pricing.js, 1 DAY / FULL LIST read from Stripe by get-pricing.
    While loading, the Japanese site shows its usual yen prices; the English site shows a dash. */
 var PC_PRICE=null;
-function pcPriceOf(rt,rg){var c=rt?rt.currency:(rg==="intl"?"usd":"jpy");return{currency:c,day:rt&&rt.day!=null?rt.day:null,list:rt&&rt.list!=null?rt.list:null,regularDay:rt&&rt.regular&&rt.regular.day?rt.regular.day:null}}
+function pcPriceOf(rt,rg){var c=rt?rt.currency:(rg==="intl"?"usd":"jpy");return{currency:c,day:rt&&rt.day!=null?rt.day:null,list:rt&&rt.list!=null?rt.list:null,regularDay:rt&&rt.regular&&rt.regular.day?rt.regular.day:null,loaded:!!rt,early:rt?rt.earlyLaunch!==false:!0}}
+/* Early-launch pricing is switched off in one place (EARLY_LAUNCH in lib/pricing.js): labels and the Regular line go away. */
+function pcEarly(){return!(PC_PRICE&&PC_PRICE.early===false)}
 function pcPriceTxt(plan){var P=PC_PRICE||{currency:"jpy"},v=P[plan];if(v==null&&P.currency==="jpy")v=plan==="day"?2200:plan==="list"?5500:null;return v==null?"\u2014":pcFmtC(v,P.currency)}
-function pcRegularTxt(){var P=PC_PRICE;if(!P||P.currency!=="jpy")return null;return pcFmtC(P.regularDay||3000,"jpy")}
+function pcRegularTxt(){var P=PC_PRICE;if(!P||P.currency!=="jpy"||P.early===false)return null;var v=P.regularDay||(P.loaded?null:3000);return v?pcFmtC(v,"jpy"):null}
 function pcPerDay(n,d,c){return c==="usd"?Math.round(n/d*100)/100:Math.floor(n/d)}
 function pcRT(fp,rg){if(!fp)return null;if(fp.regions&&fp.regions[rg])return fp.regions[rg];return rg==="intl"?null:{currency:fp.currency||"jpy",full:fp.full}}
 function pcDays(v){var d=parseInt(v,10);return d>=2&&d<=7?d:2}
@@ -1559,7 +1561,7 @@ return h("div",{className:"pl3"+(PC_JA?" ja":""),ref:ref},
  h("section",{className:"pl-choose"},
   h("div",{className:"pl-head"},h("h2",{"data-rv":0},"Choose your plan"),h("img",{className:"pl-cal",src:"images/home/nk-calendar.png",alt:"","data-rv":.1})),
   h("div",{className:"pl-grid"},
-   card({dl:.05,k:"1 DAY",t:"For a slow day in Tokyo.",d:pcT("One curated day, shaped around your mood and pace. Rebuild it as often as you like \u2014 your latest version is the one we save."),pk:"EARLY LAUNCH PRICE",moss:1,pv:pcPriceTxt("day"),ps:pcRegularTxt()?"Regular "+pcRegularTxt()+pcTx():null,b:"CREATE MY 1 DAY",on:on["naka1_5.p1"],dis:dis["naka1_5.p1"]}),
+   card({dl:.05,k:"1 DAY",t:"For a slow day in Tokyo.",d:pcT("One curated day, shaped around your mood and pace. Rebuild it as often as you like \u2014 your latest version is the one we save."),pk:pcEarly()?"EARLY LAUNCH PRICE":"PRICE",moss:pcEarly()?1:0,pv:pcPriceTxt("day"),ps:pcRegularTxt()?"Regular "+pcRegularTxt()+pcTx():null,b:"CREATE MY 1 DAY",on:on["naka1_5.p1"],dis:dis["naka1_5.p1"]}),
    card({dl:.15,k:"FULL PLAN",t:"Build your own Tokyo trip.",d:pcT("Choose your days, areas and pace. All your days are saved together as one trip."),pk:"PRICED BY DAYS",pv:"From "+full,
     link:h("button",{type:"button",className:"pl-link",onClick:on["naka1_5.btn"]},"View all prices \u2192"),b:"CREATE MY FULL PLAN",on:on["naka1_5.btn"]}),
    card({dl:.25,k:"FULL LIST",t:"Every place worth knowing.",d:pcT("Our complete collection of places."),pk:"THE COLLECTION",pv:pcPriceTxt("list"),b:"GET THE FULL LIST",on:on["naka1_5.p3"],dis:dis["naka1_5.p3"]})),
@@ -1575,7 +1577,7 @@ function PcPlanDays(p){var h=m.default.createElement,c=p.c||{},on=c.on||{},dis=c
 var rows=[];for(var d=1;d<=7;d++){(function(d){var k="naka2.d"+d,o=!!sel[k];
  rows.push(h("button",{key:d,type:"button",className:"pl-day"+(o?" on":""),"aria-pressed":o,onClick:on[k],"data-rv":.12+d*.05},
   h("span",{className:"pl-day-n"},d===1?"1 DAY":d+" DAYS"),
-  d===1?h("span",{className:"pl-day-p"},h("span",{className:"pl-day-tot"},pcPriceTxt("day"),h("small",null,pcTx())),h("span",{className:"pl-day-per"},pcRegularTxt()?pcT("Early launch price \u00b7 Regular \u00a53,000"):"Early launch price"))
+  d===1?h("span",{className:"pl-day-p"},h("span",{className:"pl-day-tot"},pcPriceTxt("day"),h("small",null,pcTx())),h("span",{className:"pl-day-per"},pcRegularTxt()?(PC_JA?"\u65e9\u671f\u30ed\u30fc\u30f3\u30c1\u4fa1\u683c\u30fb\u901a\u5e38 ":"Early launch price \u00b7 Regular ")+pcRegularTxt():(pcEarly()?pcT("Early launch price"):"")))
        :h("span",{className:"pl-day-p"},h("span",{className:"pl-day-tot"},tx[k+".tot"]||"",h("small",null,pcTx())),h("span",{className:"pl-day-per"},(tx[k+".per"]||"")+pcT(" / day")))))})(d)}
 return h("div",{className:"pl3 pl3-days"+(PC_JA?" ja":""),ref:ref},
  h("section",{className:"pl-days"},
@@ -1715,7 +1717,7 @@ return h("div",{className:"pl3 fin3",ref:ref},
     h("button",{type:"button",className:"pl-btn",onClick:A.onList},"EXPLORE THE FULL LIST")))))}
 
 function PcHome({onDay,onFull,onList,onPg,onArea,onJournal,lang,onLang,fullFrom,fullCur,priceSig}){var h=m.default.createElement,ref=(0,m.useRef)(null);
-(0,m.useEffect)(function(){var root=ref.current;if(!root)return;[].forEach.call(root.querySelectorAll("[data-price]"),function(el){var k=el.getAttribute("data-price");if(k==="regular"){var rg=pcRegularTxt();el.innerHTML=rg?"Regular "+rg+pcTx():"&nbsp;"}else{var f=el.firstChild;if(f&&f.nodeType===3)f.nodeValue=pcPriceTxt(k)+" ";var sp=el.querySelector("span");if(sp)sp.textContent=pcTx().trim()}})},[lang,priceSig]);
+(0,m.useEffect)(function(){var root=ref.current;if(!root)return;[].forEach.call(root.querySelectorAll("[data-price]"),function(el){var k=el.getAttribute("data-price");if(k==="regular"){var rg=pcRegularTxt();el.innerHTML=rg?"Regular "+rg+pcTx():"&nbsp;"}else{var f=el.firstChild;if(f&&f.nodeType===3)f.nodeValue=pcPriceTxt(k)+" ";var sp=el.querySelector("span");if(sp)sp.textContent=pcTx().trim()}});[].forEach.call(root.querySelectorAll(".h3-price-k.h3-moss"),function(e){e.textContent=pcEarly()?"EARLY LAUNCH PRICE":"PRICE"})},[lang,priceSig]);
 (0,m.useEffect)(function(){var el=ref.current&&ref.current.querySelector('[data-k="TOP11.p1"]');if(el){el.textContent="From "+pcFmtC(fullFrom||(fullCur==="usd"?26:4400),fullCur||"jpy");var nx=el.nextElementSibling;if(nx)nx.textContent=pcTaxIn(fullCur||"jpy").trim()}},[fullFrom,fullCur,lang]);
 (0,m.useEffect)(function(){var root=ref.current;if(!root)return;var rm=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;if(rm)return;/* phone rows now loop with CSS, same as the PC version */return;
 /* phone: each row of photos slowly slides to the left by itself, forever (the row is doubled so it loops without a jump).

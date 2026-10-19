@@ -67,6 +67,11 @@ const CURRENCY = { jp: "jpy", intl: "usd" };
 
 // Display only: the struck-through "Regular" price next to the 1 DAY early launch price.
 // Japanese site only (the English site shows the sale price alone).
+// EARLY LAUNCH: while true the site shows "Early Launch Price" and, on the Japanese site, the struck "Regular" price
+// below (DISPLAY_REGULAR). To END the early-launch pricing: (1) create the regular Price in Stripe and point
+// STRIPE_PRICE_JP_DAY (and STRIPE_PRICE_INTL_DAY if its price changes) at it, (2) set EARLY_LAUNCH = false here,
+// (3) redeploy. The labels and the "Regular" line then disappear from every page by themselves.
+const EARLY_LAUNCH = true;
 const DISPLAY_REGULAR = { jp: { day: 3000 } };
 
 // The Price a paid Checkout Session must contain for this plan / region / days.
@@ -87,5 +92,5 @@ const majorUnits = (currency, minor) => (currency === "jpy" ? minor : minor / 10
 
 module.exports = {
   FULL_PLAN, regionOf, minorUnits, majorUnits, amountsOf,
-  SIMPLE_PRICE_ENV, CURRENCY, DISPLAY_REGULAR, expectedPrice,
+  SIMPLE_PRICE_ENV, CURRENCY, DISPLAY_REGULAR, EARLY_LAUNCH, expectedPrice,
 };
