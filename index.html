@@ -1947,4 +1947,46 @@ react-dom/cjs/react-dom.production.min.js:
    * LICENSE file in the root directory of this source tree.
    *)
 */
+</script><script>
+/* One text color (#3C3B1F) on every page except the TOP page.
+   Dark / grey text anywhere outside the TOP page is switched to it; light text (on dark buttons, bands, photos) and
+   error text are left alone. The TOP page (.wrap.home) is never touched. Runs again whenever the screen changes. */
+(function(){
+  var INK="#3c3b1f";
+  function lum(c){var m=/rgba?\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)(?:[ ,/]+([\d.]+))?/.exec(c);if(!m)return 1;if(m[4]!==undefined&&parseFloat(m[4])===0)return 1;return(.2126*m[1]+.7152*m[2]+.0722*m[3])/255}
+  function inScope(el){
+    if(el.closest(".wrap.home"))return false;              /* TOP page: keep its design */
+    return !!el.closest(".wrap, .pageoverlay, .menuoverlay");
+  }
+  var skip={SCRIPT:1,STYLE:1,IMG:1,SVG:1,PATH:1,SELECT:1,OPTION:1,BR:1,HR:1};
+  function paintEl(el){
+    if(skip[el.tagName]||skip[String(el.tagName).toUpperCase()]||!inScope(el))return;
+    if(/(^|[ _-])err(or)?($|[ _-])/i.test(el.className&&el.className.baseVal!==undefined?el.className.baseVal:String(el.className||"")))return;
+    var has=el.tagName==="INPUT"||el.tagName==="TEXTAREA",n=el.firstChild;   /* typed text in fields counts too */
+    while(!has&&n){if(n.nodeType===3&&n.nodeValue.trim()){has=true;break}n=n.nextSibling}
+    if(!has)return;
+    var c=getComputedStyle(el).color;
+    if(lum(c)<.7){el.style.setProperty("color",INK,"important")}
+  }
+  function paint(root){
+    if(!root||root.nodeType!==1)return;
+    paintEl(root);
+    var all=root.querySelectorAll("*");
+    for(var i=0;i<all.length;i++)paintEl(all[i]);
+  }
+  var queued=false,pending=[];
+  function flush(){queued=false;var list=pending;pending=[];for(var i=0;i<list.length;i++)if(list[i].isConnected)paint(list[i])}
+  function schedule(n){pending.push(n);if(!queued){queued=true;setTimeout(flush,30)}}
+  function start(){
+    var root=document.getElementById("root");if(!root||!window.MutationObserver)return;
+    new MutationObserver(function(ms){
+      for(var i=0;i<ms.length;i++){var m=ms[i];
+        if(m.type==="childList"){for(var j=0;j<m.addedNodes.length;j++){var a=m.addedNodes[j];if(a.nodeType===1)schedule(a)}}
+        else if(m.type==="characterData"&&m.target.parentElement)schedule(m.target.parentElement);
+      }
+    }).observe(root,{childList:true,subtree:true,characterData:true});
+    schedule(root);
+  }
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
+})();
 </script></body></html>
