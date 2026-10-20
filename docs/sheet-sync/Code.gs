@@ -49,6 +49,7 @@ function onOpen() {
     .addSeparator()
     .addItem('条件が揃った行をまとめて公開にする', 'menuPublish')
     .addItem('ジャンル・タグ・価格帯・公開をプルダウンにする', 'menuDropdowns')
+    .addItem('バーの店を wine bar に直す（Googleの分類で）', 'menuBars')
     .addSeparator()
     .addItem('サイトに反映（開発用）', 'syncDev')
     .addItem('サイトに反映（本番）', 'syncProd')
@@ -199,6 +200,34 @@ function stepDetails_(t, env) {
   return { name: 'ジャンル・エリア・価格帯', text: 'ジャンル ' + g + ' / エリア ' + a + ' / 価格帯 ' + p + (errors ? ' / エラー ' + errors + '件 ' + firstError : '') };
 }
 
+// ---------- バーの分類直し（Googleで「バー」の店だけ、restaurant → wine bar） ----------
+function stepBars_(t, env) {
+  need_(t, ['genre', 'placeId']);
+  var targets = [];
+  t.values.forEach(function (r, i) {
+    if (val_(t, r, 'name') && val_(t, r, 'placeId') !== '' && val_(t, r, 'genre').toLowerCase() === 'restaurant') targets.push(i);
+  });
+  var changed = [], errors = 0, firstError = '';
+  chunks_(chunks_(targets, 10), 4).forEach(function (group) {   // 10件ずつ、4つ同時に
+    var results = callMany_(env, group.map(function (chunk) {
+      return { action: 'details', rows: chunk.map(function (i) { return { key: t.values[i][t.col.key], placeId: t.values[i][t.col.placeId] }; }) };
+    }));
+    results.forEach(function (res, gi) {
+      if (res.code !== 200) { errors += group[gi].length; if (!firstError) firstError = JSON.stringify(res.body).slice(0, 200); return; }
+      res.body.results.forEach(function (x, j) {
+        var r = t.values[group[gi][j]];
+        if (!x.ok) { if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; } return; }
+        if (x.genre === 'wine bar') { r[t.col.genre] = 'wine bar'; changed.push(val_(t, r, 'name')); }
+      });
+    });
+    SpreadsheetApp.getActive().toast('バーの分類', '確認中', 3);
+  });
+  writeCols_(t, ['genre']);
+  return { name: 'バーの分類', text: 'restaurant ' + targets.length + '件を確認 / wine bar に変更 ' + changed.length + '件' +
+    (changed.length ? '\n（' + changed.slice(0, 30).join('、') + (changed.length > 30 ? ' ほか' : '') + '）' : '') +
+    (errors ? ' / エラー ' + errors + '件 ' + firstError : '') };
+}
+
 // ---------- 3. Instagram（公式サイトのリンクから） ----------
 function stepInstagram_(t, env) {
   need_(t, ['instagram', 'website']);
@@ -285,6 +314,7 @@ function runAll() {
 function menuLookup() { runSteps_('場所情報', [stepLookup_], '店名から Google で検索して、空欄だけを埋めます。続けますか？'); }
 function menuDetails() { runSteps_('ジャンル・エリア・価格帯', [stepDetails_], 'PlaceID のある行について、空欄だけを埋めます。続けますか？'); }
 function menuInstagram() { runSteps_('Instagram', [stepInstagram_], '公式サイトから Instagram のリンクを探して、空欄だけを埋めます。続けますか？'); }
+function menuBars() { runSteps_('バーの分類', [stepBars_], 'ジャンルが restaurant の店を Google で調べて、Googleの分類が「バー」の店だけ wine bar に変えます。\n居酒屋や、ほかのジャンルの店は変えません。続けますか？'); }
 function menuDraft() { runSteps_('タグ・ひとこと', [stepDraft_], 'ジャンルのある行について、タグとひとことの下書きを AI で作ります（黄色い欄になります）。続けますか？'); }
 
 // ---------- プルダウン（ジャンル・タグ・価格帯・公開） ----------
