@@ -48,7 +48,8 @@ function onOpen() {
     .addItem('4. タグ・ひとことの下書き（AI）', 'menuDraft')
     .addSeparator()
     .addItem('条件が揃った行をまとめて公開にする', 'menuPublish')
-    .addItem('ジャンル・タグ・価格帯・公開をプルダウンにする', 'menuDropdowns')
+    .addItem('タグを選ぶ（チェックボックス）', 'menuTags')
+    .addItem('ジャンル・価格帯・公開をプルダウンにする（タグの古い設定も消す）', 'menuDropdowns')
     .addItem('バーの店を wine bar に直す（Googleの分類で）', 'menuBars')
     .addSeparator()
     .addItem('サイトに反映（開発用）', 'syncDev')
@@ -350,15 +351,74 @@ function menuDropdowns() {
       SpreadsheetApp.newDataValidation().requireValueInList(items, true).setAllowInvalid(true).build());
   };
   list('genre', GENRES);
-  list('tags', TAGS);
   list('price', PRICES);
   list('published', ['公開', '非公開']);
+  // タグの列は、プルダウンにしない（Googleの複数選択はプログラムから設定できないため）。古い設定も消す
+  t.sh.getRange(1, t.col.tags + 1, t.sh.getMaxRows(), 1).clearDataValidations();
   ui.alert('プルダウンにしました',
-    'ジャンル・タグ・価格帯・公開の列で、セルの ▼ から選べます。\n' +
+    'ジャンル・価格帯・公開の列で、セルの ▼ から選べます。\n' +
     (removedText ? 'サイトで選べないタグを外しました（' + changedRows + '行）: ' + removedText + '\n' : '') + '\n' +
-    '【タグを複数選べるようにする（最初の1回だけ）】\n' +
-    '1. タグの列のセルを1つ選んで、右クリック →「プルダウン」を押します。\n' +
-    '2. 右に出た画面で「複数選択を許可」にチェックを入れて、「完了」を押します。', ui.ButtonSet.OK);
+    'タグは、お店の行を選んで、メニューの「タグを選ぶ（チェックボックス）」から選んでください。', ui.ButtonSet.OK);
+}
+
+// ---------- タグを選ぶ（右側のチェックボックス） ----------
+var TAG_GROUPS = [['テーマ（1つ目の画面）', 0, 10], ['Mood', 10, 16], ['Aesthetic', 16, 22], ['Things I love', 22, 25], ['Way I travel', 25, 29]];
+
+function menuTags() {
+  var boxes = TAG_GROUPS.map(function (g) {
+    return '<h4>' + g[0] + '</h4>' + TAGS.slice(g[1], g[2]).map(function (k) {
+      return '<label><input type="checkbox" value="' + k + '"> ' + k + '</label>';
+    }).join('');
+  }).join('');
+  var html = '<style>body{font-family:Arial,sans-serif;font-size:13px;margin:10px}h4{margin:12px 0 4px;color:#555}' +
+    'label{display:block;padding:3px 0;cursor:pointer}#name{font-weight:bold;font-size:15px;margin:4px 0}' +
+    'button{margin:6px 6px 0 0;padding:8px 10px;font-size:13px;cursor:pointer}#msg{color:#1a73e8;min-height:18px;margin-top:6px}' +
+    '.bar{position:sticky;top:0;background:#fff;padding-bottom:6px;border-bottom:1px solid #ddd}</style>' +
+    '<div class="bar"><div id="name">…</div><div id="cnt"></div>' +
+    '<button onclick="save(false)">保存</button><button onclick="save(true)">保存して次の行へ</button>' +
+    '<button onclick="load()">今の行を読み込む</button><div id="msg"></div></div>' + boxes +
+    '<script>var row=0;function boxes(){return [].slice.call(document.querySelectorAll("input[type=checkbox]"))}' +
+    'function cnt(){document.getElementById("cnt").textContent="選んだタグ: "+boxes().filter(function(b){return b.checked}).length+"個（3〜5個がおすすめ）"}' +
+    'boxes().forEach(function(b){b.onchange=cnt});' +
+    'function show(d){if(d.error){document.getElementById("name").textContent=d.error;row=0;return}row=d.row;' +
+    'document.getElementById("name").textContent=d.row+"行目: "+d.name;boxes().forEach(function(b){b.checked=d.tags.indexOf(b.value)>=0});cnt()}' +
+    'function msg(t){document.getElementById("msg").textContent=t}' +
+    'function load(){msg("読み込み中…");google.script.run.withSuccessHandler(function(d){show(d);msg("")}).withFailureHandler(function(e){msg(e.message)}).tagPanelLoad()}' +
+    'function save(next){if(!row){msg("先にお店の行を選んで「今の行を読み込む」を押してください");return}' +
+    'var tags=boxes().filter(function(b){return b.checked}).map(function(b){return b.value});msg("保存中…");' +
+    'google.script.run.withSuccessHandler(function(d){if(next){show(d);msg("保存しました。次の行です")}else msg("保存しました")}).withFailureHandler(function(e){msg(e.message)}).tagPanelSave(row,tags,next)}' +
+    'load();</script>';
+  SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(html).setTitle('タグを選ぶ'));
+}
+
+function tagRow_(t, row) {
+  var r = t.values[row - 2];
+  if (row < 2 || !r || !val_(t, r, 'name')) return { error: 'お店の行のセルを1つ選んで、「今の行を読み込む」を押してください。' };
+  var tags = val_(t, r, 'tags').split(/[,、]/).map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+  return { row: row, name: val_(t, r, 'name'), tags: tags };
+}
+
+// 右側の画面から呼ばれる（名前の最後に _ を付けない）
+function tagPanelLoad() {
+  var t = table_();
+  return tagRow_(t, t.sh.getActiveCell().getRow());
+}
+
+function tagPanelSave(row, tags, next) {
+  var t = table_();
+  need_(t, ['tags']);
+  var keep = TAGS.filter(function (k) { return tags.indexOf(k) >= 0; });
+  // 確認した印に、黄色（AIの下書き）を消す
+  t.sh.getRange(row, t.col.tags + 1).setValue(keep.join(', ')).setBackground(null);
+  t.values[row - 2][t.col.tags] = keep.join(', ');
+  if (!next) return tagRow_(t, row);
+  for (var r = row + 1; r <= t.values.length + 1; r++) {
+    if (val_(t, t.values[r - 2], 'name')) {
+      t.sh.setActiveRange(t.sh.getRange(r, t.col.tags + 1));
+      return tagRow_(t, r);
+    }
+  }
+  return { error: '最後の行です。' };
 }
 
 // ---------- 条件が揃った行を公開にする ----------
