@@ -4,12 +4,13 @@
 //   full    : FULL PLAN amount per number of days (from lib/pricing.js, same table checkout bills from)
 //   day     : 1 DAY PLAN amount  } read from Stripe, using the same Price IDs (Netlify env)
 //   list    : FULL LIST amount   } that create-checkout-session.js bills with
-//   regular : display-only "Regular" price (Japanese site, 1 DAY only)
+//   regular : display-only "Regular" price (Japanese site, 1 DAY only; null once EARLY_LAUNCH is false)
+//   earlyLaunch : false hides the "Early Launch Price" labels on the site
 // `currency` / `full` at the top level are the JPY table (kept for older pages).
 // Amounts are in major units (yen / dollars).
 
 const Stripe = require("stripe");
-const { FULL_PLAN, amountsOf, SIMPLE_PRICE_ENV, CURRENCY, DISPLAY_REGULAR, majorUnits } = require("./lib/pricing");
+const { FULL_PLAN, amountsOf, SIMPLE_PRICE_ENV, CURRENCY, DISPLAY_REGULAR, EARLY_LAUNCH, majorUnits } = require("./lib/pricing");
 
 let cache = null; // { at, data } — per warm function instance
 const TTL = 5 * 60 * 1000;
@@ -52,7 +53,8 @@ exports.handler = async (event) => {
       full: amountsOf(r),
       day: simple[r].day != null ? simple[r].day : null,
       list: simple[r].list != null ? simple[r].list : null,
-      regular: DISPLAY_REGULAR[r] || null,
+      regular: EARLY_LAUNCH ? DISPLAY_REGULAR[r] || null : null,
+      earlyLaunch: EARLY_LAUNCH,
     };
   }
   return {

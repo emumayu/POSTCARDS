@@ -1,0 +1,531 @@
+/**
+ * POSTCARDS PLACE DATABASE — シートからサイトへ反映するスクリプト
+ *
+ * 使い方は docs/sheet-sync/README.md を見てください。
+ * メニュー「POSTCARDS」:
+ *   店名だけで全部自動入力     … 下の1〜4を順に実行します（新しい店を足したときは、これだけでOK）
+ *   1. 場所情報を自動入力      … 緯度・経度・公式サイト・Googleマップ・営業状況（Google）
+ *   2. ジャンル・エリア・価格帯・子供OK・ペットOK … Googleの情報から
+ *   3. Instagramを公式サイトから探す
+ *   4. タグ・ひとことの下書き  … AIの下書き。黄色い欄は、確認してください
+ *   条件が揃った行をまとめて公開にする … ジャンル・緯度経度・タグが入っていて、閉店でない行を「公開」にする
+ *   サイトに反映（開発用）/（本番） … シートの内容をSupabaseに送る
+ *   接続設定                   … サイトのURLとトークンを保存する（シートには書かない）
+ */
+
+var HEADERS = {
+  key: 'キー', city: '都市', name: '店名', area: 'エリア', genre: 'ジャンル', tags: 'タグ', note: 'ひとこと', noteJa: 'ひとこと（日本語）',
+  price: '価格帯', instagram: 'Instagram', website: '公式サイト', map: 'Googleマップ', lat: '緯度', lng: '経度',
+  published: '公開', status: '営業状況', matched: '照合した店名', placeId: 'PlaceID',
+  best: 'おすすめの人', when: '時間帯', order: 'おすすめ順', pair: 'あわせて', slot: '枠',
+  kids: '子供OK', pets: 'ペットOK'
+};
+var DRAFT_COLOR = '#fff2cc';   // AIの下書きを入れた欄の色（確認したら色を消してください）
+var DRAFT_MAX = 100;           // 下書きは1回に最大この件数
+// プルダウンの選択肢（サイトで使っている値。増やすときは、ここに足して「プルダウンを作る」を押し直す）
+var GENRES = ['cafe', 'bakery', 'restaurant', 'wine bar', 'shop', 'hotel', 'museum', 'gallery', 'walk', 'architecture'];
+// タグは、サイトでお客さんが選べるものだけ（画面の順番どおり）。サイトの選択肢を変えたら、ここと sync-places.js の TAGS も合わせる
+var TAGS = [
+  // 1つ目の画面（テーマ）: Slow mornings / Local life / Design & art / Food & coffee / Wellness & nature / Little luxuries
+  'morningperson', 'slowafternoon', 'localsonly', 'neighborhoodlover', 'designlover', 'artandculture', 'foodlover', 'coffeeculture', 'wellnessescape', 'littleluxuries',
+  // 2つ目の画面: Mood
+  'quiet', 'slowmorning', 'cozy', 'dreamy', 'moody', 'romantic',
+  // Aesthetic
+  'minimal', 'design', 'contemporary', 'vintage', 'nordic', 'architecture',
+  // Things I love（coffeeculture / foodlover / artandculture は上にあり）
+  'wine', 'fashion', 'beautifulthings',
+  // Way I travel（neighborhoodlover / littleluxuries は上にあり）
+  'local', 'citywanderer', 'undertheradar', 'nature'];
+var PRICES = ['free', '¥', '¥¥', '¥¥¥', '¥¥¥¥'];
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('POSTCARDS')
+    .addItem('店名だけで全部自動入力', 'runAll')
+    .addSeparator()
+    .addItem('1. 場所情報を自動入力（Google）', 'menuLookup')
+    .addItem('2. ジャンル・エリア・価格帯などを自動入力', 'menuDetails')
+    .addItem('3. Instagramを公式サイトから探す', 'menuInstagram')
+    .addItem('4. タグ・ひとことの下書き（AI）', 'menuDraft')
+    .addItem('5. ひとこと（日本語）をAIで訳す', 'menuTranslate')
+    .addSeparator()
+    .addItem('条件が揃った行をまとめて公開にする', 'menuPublish')
+    .addItem('タグを選ぶ（チェックボックス）', 'menuTags')
+    .addItem('ジャンル・価格帯・公開をプルダウンにする（タグの古い設定も消す）', 'menuDropdowns')
+    .addItem('バーの店を wine bar に直す（Googleの分類で）', 'menuBars')
+    .addSeparator()
+    .addItem('サイトに反映（開発用）', 'syncDev')
+    .addItem('サイトに反映（本番）', 'syncProd')
+    .addSeparator()
+    .addItem('接続設定', 'setup')
+    .addToUi();
+}
+
+// ---------- 接続設定 ----------
+function setup() {
+  var ui = SpreadsheetApp.getUi(), p = PropertiesService.getDocumentProperties();
+  ['dev', 'prod'].forEach(function (env) {
+    var label = env === 'dev' ? '開発用' : '本番';
+    var u = ui.prompt('接続設定（' + label + '）', 'サイトのURL（例: https://xxxx.netlify.app ）。空欄のままOKなら変更しません。', ui.ButtonSet.OK_CANCEL);
+    if (u.getSelectedButton() !== ui.Button.OK) return;
+    if (u.getResponseText().trim()) p.setProperty('URL_' + env, u.getResponseText().trim().replace(/\/+$/, ''));
+    var t = ui.prompt('接続設定（' + label + '）', 'トークン（Netlifyの SYNC_TOKEN と同じもの）。空欄のままOKなら変更しません。', ui.ButtonSet.OK_CANCEL);
+    if (t.getSelectedButton() !== ui.Button.OK) return;
+    if (t.getResponseText().trim()) p.setProperty('TOKEN_' + env, t.getResponseText().trim());
+  });
+  ui.alert('保存しました。');
+}
+
+function conn_(env) {
+  var p = PropertiesService.getDocumentProperties();
+  var url = p.getProperty('URL_' + env), token = p.getProperty('TOKEN_' + env);
+  if (!url || !token) throw new Error('先にメニューの「接続設定」を行ってください。');
+  return { url: url + '/.netlify/functions/sync-places', token: token };
+}
+
+function req_(c, payload) {
+  return { url: c.url, method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + c.token }, payload: JSON.stringify(payload) };
+}
+
+function parse_(res) {
+  var body = {};
+  try { body = JSON.parse(res.getContentText()); } catch (e) {}
+  return { code: res.getResponseCode(), body: body };
+}
+
+function call_(env, payload) { return parse_(UrlFetchApp.fetch(conn_(env).url, req_(conn_(env), payload))); }
+
+// 複数のリクエストを同時に送る
+function callMany_(env, payloads) {
+  var c = conn_(env);
+  return UrlFetchApp.fetchAll(payloads.map(function (p) { return req_(c, p); })).map(parse_);
+}
+
+function env_() { return PropertiesService.getDocumentProperties().getProperty('URL_dev') ? 'dev' : 'prod'; }
+
+// ---------- シートの読み書き ----------
+function table_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet(), last = sh.getLastRow(), cols = sh.getLastColumn();
+  var head = sh.getRange(1, 1, 1, cols).getValues()[0];
+  var col = {};
+  Object.keys(HEADERS).forEach(function (k) { var i = head.indexOf(HEADERS[k]); if (i >= 0) col[k] = i; });
+  ['key', 'city', 'name'].forEach(function (k) {
+    if (col[k] === undefined) throw new Error('見出し「' + HEADERS[k] + '」が1行目にありません。お店のリストのタブを開いてから押してください。');
+  });
+  var values = last > 1 ? sh.getRange(2, 1, last - 1, cols).getValues() : [];
+  var t = { sh: sh, col: col, values: values, cols: cols };
+  ensureKeys_(t);
+  return t;
+}
+
+function ensureKeys_(t) {
+  var changed = false;
+  t.values.forEach(function (r) {
+    if (String(r[t.col.name]).trim() && !String(r[t.col.key]).trim()) { r[t.col.key] = 'n' + Utilities.getUuid().replace(/-/g, '').slice(0, 8); changed = true; }
+    if (String(r[t.col.name]).trim() && !String(r[t.col.city]).trim()) { r[t.col.city] = 'Tokyo'; changed = true; }
+  });
+  if (changed) writeCols_(t, ['key', 'city']);
+}
+
+function writeCols_(t, keys) {
+  keys.forEach(function (k) {
+    if (t.col[k] === undefined || !t.values.length) return;
+    t.sh.getRange(2, t.col[k] + 1, t.values.length, 1).setValues(t.values.map(function (r) { return [r[t.col[k]]]; }));
+  });
+}
+
+function blank_(t, r, k) { return t.col[k] !== undefined && String(r[t.col[k]]).trim() === ''; }
+function val_(t, r, k) { return t.col[k] === undefined ? '' : String(r[t.col[k]]).trim(); }
+function rowObj_(t, r) { var o = {}; Object.keys(t.col).forEach(function (k) { o[k] = r[t.col[k]]; }); return o; }
+
+function chunks_(arr, n) { var out = []; for (var i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; }
+
+function need_(t, keys) {
+  keys.forEach(function (k) { if (t.col[k] === undefined) throw new Error('見出し「' + HEADERS[k] + '」が1行目にありません。'); });
+}
+
+// ---------- 1. 場所情報（Google Places） ----------
+function stepLookup_(t, env) {
+  need_(t, ['status', 'placeId']);
+  var targets = [];
+  t.values.forEach(function (r, i) { if (val_(t, r, 'name') && val_(t, r, 'status') === '') targets.push(i); });
+  var filled = 0, notFound = 0, errors = 0, firstError = '';
+  chunks_(targets, 10).forEach(function (chunk) {
+    var rows = chunk.map(function (i) { var r = t.values[i]; return { key: r[t.col.key], name: r[t.col.name], area: t.col.area !== undefined ? r[t.col.area] : '', city: r[t.col.city] }; });
+    var res = call_(env, { action: 'enrich', rows: rows });
+    if (res.code !== 200) throw new Error('場所情報（' + res.code + '）: ' + JSON.stringify(res.body).slice(0, 300));
+    res.body.results.forEach(function (x, j) {
+      var r = t.values[chunk[j]];
+      if (!x.ok) {
+        if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; return; }
+        r[t.col.status] = 'NOT_FOUND'; notFound++; return;
+      }
+      if (blank_(t, r, 'lat') && x.lat != null) r[t.col.lat] = x.lat;
+      if (blank_(t, r, 'lng') && x.lng != null) r[t.col.lng] = x.lng;
+      if (blank_(t, r, 'website') && x.website) r[t.col.website] = x.website;
+      if (t.col.map !== undefined && (val_(t, r, 'map') === '' || val_(t, r, 'map').indexOf('/maps/search/') >= 0) && x.map_url) r[t.col.map] = x.map_url;
+      if (t.col.matched !== undefined) r[t.col.matched] = x.matched;
+      r[t.col.placeId] = x.place_id;
+      r[t.col.status] = x.status || 'OPERATIONAL';
+      if (x.status === 'CLOSED_PERMANENTLY' && t.col.published !== undefined) r[t.col.published] = '非公開';
+      filled++;
+    });
+    SpreadsheetApp.getActive().toast('場所情報', '自動入力中', 3);
+  });
+  writeCols_(t, ['lat', 'lng', 'website', 'map', 'matched', 'placeId', 'status', 'published']);
+  return { name: '場所情報', text: '入力 ' + filled + '件 / 見つからない ' + notFound + '件' + (errors ? ' / エラー ' + errors + '件 ' + firstError : '') };
+}
+
+// ---------- 2. ジャンル・エリア・価格帯・子供OK・ペットOK ----------
+function stepDetails_(t, env) {
+  need_(t, ['genre', 'area', 'price', 'placeId']);
+  var targets = [];
+  t.values.forEach(function (r, i) {
+    if (val_(t, r, 'name') && val_(t, r, 'placeId') !== '' && (blank_(t, r, 'genre') || blank_(t, r, 'area') || blank_(t, r, 'price'))) targets.push(i);
+  });
+  var g = 0, a = 0, p = 0, errors = 0, firstError = '';
+  chunks_(targets, 10).forEach(function (chunk) {
+    var rows = chunk.map(function (i) { var r = t.values[i]; return { key: r[t.col.key], placeId: r[t.col.placeId] }; });
+    var res = call_(env, { action: 'details', rows: rows });
+    if (res.code !== 200) throw new Error('ジャンル等（' + res.code + '）: ' + JSON.stringify(res.body).slice(0, 300));
+    res.body.results.forEach(function (x, j) {
+      var r = t.values[chunk[j]];
+      if (!x.ok) { if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; } return; }
+      if (blank_(t, r, 'genre') && x.genre) { r[t.col.genre] = x.genre; g++; }
+      if (blank_(t, r, 'area') && x.area) { r[t.col.area] = x.area; a++; }
+      if (blank_(t, r, 'price') && x.price) { r[t.col.price] = x.price; p++; }
+      if (blank_(t, r, 'kids') && x.kids) r[t.col.kids] = x.kids;
+      if (blank_(t, r, 'pets') && x.pets) r[t.col.pets] = x.pets;
+    });
+    SpreadsheetApp.getActive().toast('ジャンル・エリア', '自動入力中', 3);
+  });
+  writeCols_(t, ['genre', 'area', 'price', 'kids', 'pets']);
+  return { name: 'ジャンル・エリア・価格帯', text: 'ジャンル ' + g + ' / エリア ' + a + ' / 価格帯 ' + p + (errors ? ' / エラー ' + errors + '件 ' + firstError : '') };
+}
+
+// ---------- バーの分類直し（Googleで「バー」の店だけ、restaurant → wine bar） ----------
+function stepBars_(t, env) {
+  need_(t, ['genre', 'placeId']);
+  var targets = [];
+  t.values.forEach(function (r, i) {
+    if (val_(t, r, 'name') && val_(t, r, 'placeId') !== '' && val_(t, r, 'genre').toLowerCase() === 'restaurant') targets.push(i);
+  });
+  var changed = [], errors = 0, firstError = '';
+  chunks_(chunks_(targets, 10), 4).forEach(function (group) {   // 10件ずつ、4つ同時に
+    var results = callMany_(env, group.map(function (chunk) {
+      return { action: 'details', rows: chunk.map(function (i) { return { key: t.values[i][t.col.key], placeId: t.values[i][t.col.placeId] }; }) };
+    }));
+    results.forEach(function (res, gi) {
+      if (res.code !== 200) { errors += group[gi].length; if (!firstError) firstError = JSON.stringify(res.body).slice(0, 200); return; }
+      res.body.results.forEach(function (x, j) {
+        var r = t.values[group[gi][j]];
+        if (!x.ok) { if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; } return; }
+        if (x.genre === 'wine bar') { r[t.col.genre] = 'wine bar'; changed.push(val_(t, r, 'name')); }
+      });
+    });
+    SpreadsheetApp.getActive().toast('バーの分類', '確認中', 3);
+  });
+  writeCols_(t, ['genre']);
+  return { name: 'バーの分類', text: 'restaurant ' + targets.length + '件を確認 / wine bar に変更 ' + changed.length + '件' +
+    (changed.length ? '\n（' + changed.slice(0, 30).join('、') + (changed.length > 30 ? ' ほか' : '') + '）' : '') +
+    (errors ? ' / エラー ' + errors + '件 ' + firstError : '') };
+}
+
+// ---------- 5. ひとこと（日本語）: 英語のひとことをAIで訳す ----------
+// 「ひとこと（日本語）」の列がなければ、「ひとこと」の右に作る
+function ensureNoteJaCol_() {
+  var sh = SpreadsheetApp.getActiveSheet(), cols = sh.getLastColumn();
+  var head = sh.getRange(1, 1, 1, cols).getValues()[0];
+  if (head.indexOf(HEADERS.noteJa) >= 0) return;
+  var i = head.indexOf(HEADERS.note);
+  if (i < 0) throw new Error('見出し「' + HEADERS.note + '」が1行目にありません。お店のリストのタブを開いてから押してください。');
+  sh.insertColumnAfter(i + 1);
+  sh.getRange(1, i + 2).setValue(HEADERS.noteJa);
+}
+
+function stepTranslate_(t, env) {
+  need_(t, ['note', 'noteJa']);
+  var targets = [];
+  t.values.forEach(function (r, i) { if (val_(t, r, 'name') && val_(t, r, 'note') !== '' && blank_(t, r, 'noteJa')) targets.push(i); });
+  var more = targets.length > DRAFT_MAX;
+  targets = targets.slice(0, DRAFT_MAX);
+  var done = 0, errors = 0, firstError = '';
+  chunks_(chunks_(targets, 5), 3).forEach(function (group) {   // 5件ずつ、3つ同時に
+    var results = callMany_(env, group.map(function (chunk) {
+      return { action: 'translate', rows: chunk.map(function (i) { var r = t.values[i]; return { key: r[t.col.key], name: r[t.col.name], note: r[t.col.note] }; }) };
+    }));
+    results.forEach(function (res, gi) {
+      if (res.code !== 200) { errors += group[gi].length; if (!firstError) firstError = JSON.stringify(res.body).slice(0, 200); return; }
+      res.body.results.forEach(function (x, j) {
+        var r = t.values[group[gi][j]];
+        if (!x.ok) { if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; } return; }
+        if (blank_(t, r, 'noteJa')) { r[t.col.noteJa] = x.note_ja; done++; }
+      });
+    });
+    SpreadsheetApp.getActive().toast('ひとこと（日本語）', '翻訳中', 3);
+  });
+  writeCols_(t, ['noteJa']);
+  return { name: 'ひとこと（日本語）', text: '訳した ' + done + '件' + (errors ? ' / エラー ' + errors + '件 ' + firstError : '') + (more ? '\n※まだ残りがあります。もう一度実行してください。' : '') };
+}
+
+// ---------- 3. Instagram（公式サイトのリンクから） ----------
+function stepInstagram_(t, env) {
+  need_(t, ['instagram', 'website']);
+  var targets = [];
+  t.values.forEach(function (r, i) { var ig = val_(t, r, 'instagram');
+    if (/\.php$/i.test(ig)) { r[t.col.instagram] = ''; ig = ''; }   // 以前の取り違え（@rsrc.php など）は消して探し直す
+    if (val_(t, r, 'name') && (ig === '' || ig === '要確認') && val_(t, r, 'website') !== '') targets.push(i); });
+  var found = 0, none = 0, errors = 0;
+  var groups = chunks_(chunks_(targets, 10), 4);       // 10件ずつ、4つ同時に
+  groups.forEach(function (group) {
+    var results = callMany_(env, group.map(function (chunk) {
+      return { action: 'instagram', rows: chunk.map(function (i) { return { key: t.values[i][t.col.key], website: t.values[i][t.col.website] }; }) };
+    }));
+    results.forEach(function (res, gi) {
+      if (res.code !== 200) { errors += group[gi].length; return; }
+      res.body.results.forEach(function (x, j) {
+        var r = t.values[group[gi][j]];
+        if (x.ok) { r[t.col.instagram] = x.instagram; found++; } else { r[t.col.instagram] = '要確認'; none++; }
+      });
+    });
+    SpreadsheetApp.getActive().toast('Instagram', '自動入力中', 3);
+  });
+  writeCols_(t, ['instagram']);
+  return { name: 'Instagram', text: '見つかった ' + found + '件 / 見つからない ' + none + '件（「要確認」と書きました。手で調べて入れてください）' + (errors ? ' / エラー ' + errors + '件' : '') };
+}
+
+// ---------- 4. タグ・ひとこと（AIの下書き） ----------
+function stepDraft_(t, env) {
+  need_(t, ['genre', 'tags', 'note']);
+  var targets = [], nNames = 0, nGenre = 0, nTagBlank = 0, nNoteBlank = 0;
+  t.values.forEach(function (r, i) {
+    if (!val_(t, r, 'name')) return;
+    nNames++;
+    var hasG = val_(t, r, 'genre') !== '';
+    if (hasG) nGenre++;
+    if (hasG && blank_(t, r, 'tags')) nTagBlank++;
+    if (hasG && blank_(t, r, 'note')) nNoteBlank++;
+    if (hasG && (blank_(t, r, 'tags') || blank_(t, r, 'note'))) targets.push(i);
+  });
+  var diag = '\n（シート「' + t.sh.getName() + '」: 店名のある行 ' + nNames + ' / ジャンルのある行 ' + nGenre + ' / そのうちタグが空 ' + nTagBlank + '・ひとことが空 ' + nNoteBlank + '）';
+  var more = targets.length > DRAFT_MAX;
+  targets = targets.slice(0, DRAFT_MAX);
+  var done = 0, bad = 0, errors = 0, firstError = '';
+  var marks = [];
+  chunks_(chunks_(targets, 3), 3).forEach(function (group) {   // 3件ずつ、3つ同時に（多すぎるとAIが時間切れになる）
+    var results = callMany_(env, group.map(function (chunk) {
+      return { action: 'draft', rows: chunk.map(function (i) { var r = t.values[i]; return { key: r[t.col.key], name: r[t.col.name], genre: r[t.col.genre], area: t.col.area !== undefined ? r[t.col.area] : '', website: t.col.website !== undefined ? r[t.col.website] : '' }; }) };
+    }));
+    results.forEach(function (res, gi) {
+      if (res.code !== 200) { errors += group[gi].length; if (!firstError) firstError = JSON.stringify(res.body).slice(0, 200); return; }
+      res.body.results.forEach(function (x, j) {
+        var i = group[gi][j], r = t.values[i];
+        if (!x.ok) { if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; } else bad++; return; }
+        if (blank_(t, r, 'tags') && x.tags && x.tags.length) { r[t.col.tags] = x.tags.join(', '); marks.push([i, 'tags']); }
+        if (blank_(t, r, 'note') && x.note) { r[t.col.note] = x.note; marks.push([i, 'note']); }
+        done++;
+      });
+    });
+    SpreadsheetApp.getActive().toast('タグ・ひとこと', '下書き中', 3);
+  });
+  writeCols_(t, ['tags', 'note']);
+  marks.forEach(function (m) { t.sh.getRange(m[0] + 2, t.col[m[1]] + 1).setBackground(DRAFT_COLOR); });
+  return { name: 'タグ・ひとこと（AI下書き）', text: '下書き ' + done + '件（黄色い欄）' + (bad ? ' / 作れなかった ' + bad + '件' : '') + (errors ? ' / エラー ' + errors + '件 ' + firstError : '') + (more ? '\n※まだ残りがあります。もう一度実行してください。' : '') + diag };
+}
+
+// ---------- メニュー ----------
+function runSteps_(title, steps, confirmText) {
+  var ui = SpreadsheetApp.getUi();
+  if (ui.alert(title, confirmText, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  var env = env_(), t = table_(), out = [];
+  try {
+    steps.forEach(function (f) { out.push(f(t, env)); });
+  } catch (e) {
+    out.push({ name: '中断', text: e.message });
+  }
+  ui.alert('完了', out.map(function (o) { return '・' + o.name + ': ' + o.text; }).join('\n') +
+    '\n\n「照合した店名」が合っているか、ジャンルが合っているか、黄色い欄（AIの下書き）の内容を、目で確認してください。', ui.ButtonSet.OK);
+}
+
+function runAll() {
+  ensureNoteJaCol_();
+  runSteps_('店名だけで全部自動入力', [stepLookup_, stepDetails_, stepInstagram_, stepDraft_, stepTranslate_],
+    '空欄だけを埋めます（入力済みの欄は変更しません）。\n場所情報 → ジャンル・エリア・価格帯 → Instagram → タグ・ひとこと（AI下書き）→ ひとこと（日本語）の順に実行します。\n行が多いと数分かかります。続けますか？');
+}
+function menuLookup() { runSteps_('場所情報', [stepLookup_], '店名から Google で検索して、空欄だけを埋めます。続けますか？'); }
+function menuDetails() { runSteps_('ジャンル・エリア・価格帯', [stepDetails_], 'PlaceID のある行について、空欄だけを埋めます。続けますか？'); }
+function menuInstagram() { runSteps_('Instagram', [stepInstagram_], '公式サイトから Instagram のリンクを探して、空欄だけを埋めます。続けますか？'); }
+function menuBars() { runSteps_('バーの分類', [stepBars_], 'ジャンルが restaurant の店を Google で調べて、Googleの分類が「バー」の店だけ wine bar に変えます。\n居酒屋や、ほかのジャンルの店は変えません。続けますか？'); }
+function menuTranslate() {
+  ensureNoteJaCol_();
+  runSteps_('ひとこと（日本語）', [stepTranslate_], '英語のひとことがあって、日本語が空の行を、AIで日本語に訳します。\n入力済みの日本語は変えません。続けますか？');
+}
+function menuDraft() { runSteps_('タグ・ひとこと', [stepDraft_], 'ジャンルのある行について、タグとひとことの下書きを AI で作ります（黄色い欄になります）。続けますか？'); }
+
+// ---------- プルダウン（ジャンル・タグ・価格帯・公開） ----------
+function menuDropdowns() {
+  var ui = SpreadsheetApp.getUi(), t = table_();
+  need_(t, ['genre', 'tags', 'price', 'published']);
+  // 今あるタグから、サイトで選べないもの（creativeescape など）を外し、区切りを「, 」にそろえる
+  var removed = {}, changedRows = 0;
+  t.values.forEach(function (r) {
+    var cur = val_(t, r, 'tags');
+    if (!cur) return;
+    var keep = [];
+    cur.split(/[,、]/).map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean).forEach(function (s) {
+      if (TAGS.indexOf(s) < 0) { removed[s] = (removed[s] || 0) + 1; return; }
+      if (keep.indexOf(s) < 0) keep.push(s);
+    });
+    var next = keep.join(', ');
+    if (next !== cur) { r[t.col.tags] = next; changedRows++; }
+  });
+  var removedText = Object.keys(removed).map(function (k) { return k + '（' + removed[k] + '）'; }).join('、');
+  if (removedText && ui.alert('タグの整理',
+      'サイトで選べないタグを、シートから外します:\n' + removedText + '\n\n続けますか？（「キャンセル」なら、外さずにプルダウンだけ作ります）',
+      ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) {
+    removedText = '';
+    changedRows = 0;
+  } else if (changedRows) {
+    writeCols_(t, ['tags']);
+  }
+  var n = Math.max(t.sh.getMaxRows() - 1, 1);
+  var list = function (k, items) {
+    // 一覧にない値（古いタグなど）も消さずに残す（警告の印だけ出る）
+    t.sh.getRange(2, t.col[k] + 1, n, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(items, true).setAllowInvalid(true).build());
+  };
+  list('genre', GENRES);
+  list('price', PRICES);
+  list('published', ['公開', '非公開']);
+  // タグの列は、プルダウンにしない（Googleの複数選択はプログラムから設定できないため）。古い設定も消す
+  t.sh.getRange(1, t.col.tags + 1, t.sh.getMaxRows(), 1).clearDataValidations();
+  ui.alert('プルダウンにしました',
+    'ジャンル・価格帯・公開の列で、セルの ▼ から選べます。\n' +
+    (removedText ? 'サイトで選べないタグを外しました（' + changedRows + '行）: ' + removedText + '\n' : '') + '\n' +
+    'タグは、お店の行を選んで、メニューの「タグを選ぶ（チェックボックス）」から選んでください。', ui.ButtonSet.OK);
+}
+
+// ---------- タグを選ぶ（右側のチェックボックス） ----------
+var TAG_GROUPS = [['テーマ（1つ目の画面）', 0, 10], ['Mood', 10, 16], ['Aesthetic', 16, 22], ['Things I love', 22, 25], ['Way I travel', 25, 29]];
+
+function menuTags() {
+  var boxes = TAG_GROUPS.map(function (g) {
+    return '<h4>' + g[0] + '</h4>' + TAGS.slice(g[1], g[2]).map(function (k) {
+      return '<label><input type="checkbox" value="' + k + '"> ' + k + '</label>';
+    }).join('');
+  }).join('');
+  var html = '<style>body{font-family:Arial,sans-serif;font-size:13px;margin:10px}h4{margin:12px 0 4px;color:#555}' +
+    'label{display:block;padding:3px 0;cursor:pointer}#name{font-weight:bold;font-size:15px;margin:4px 0}' +
+    'button{margin:6px 6px 0 0;padding:8px 10px;font-size:13px;cursor:pointer}#msg{color:#1a73e8;min-height:18px;margin-top:6px}' +
+    '.bar{position:sticky;top:0;background:#fff;padding-bottom:6px;border-bottom:1px solid #ddd}</style>' +
+    '<div class="bar"><div id="name">…</div><div id="cnt"></div>' +
+    '<div style="margin-top:6px;color:#555">ひとこと</div><textarea id="note" rows="3" style="width:100%;box-sizing:border-box;font-size:13px"></textarea>' +
+    '<div style="margin-top:6px;color:#555">ひとこと（日本語）</div><textarea id="noteJa" rows="3" style="width:100%;box-sizing:border-box;font-size:13px"></textarea>' +
+    '<button onclick="save(false)">保存</button><button onclick="save(true)">保存して次の行へ</button>' +
+    '<div id="msg"></div><div style="color:#777;font-size:12px">左のシートでお店の行をクリックすると、ここが切り替わります。</div></div>' + boxes +
+    '<script>var row=0,dirty=false;function boxes(){return [].slice.call(document.querySelectorAll("input[type=checkbox]"))}' +
+    'function cnt(){document.getElementById("cnt").textContent="選んだタグ: "+boxes().filter(function(b){return b.checked}).length+"個（3〜5個がおすすめ）"}' +
+    'boxes().forEach(function(b){b.onchange=function(){dirty=true;cnt()}});document.getElementById("note").oninput=function(){dirty=true};document.getElementById("noteJa").oninput=function(){dirty=true};' +
+    'function show(d){dirty=false;if(d.error){document.getElementById("name").textContent=d.error;row=0;return}row=d.row;' +
+    'document.getElementById("name").textContent=d.row+"行目: "+d.name;boxes().forEach(function(b){b.checked=d.tags.indexOf(b.value)>=0});document.getElementById("note").value=d.note||"";document.getElementById("noteJa").value=d.noteJa||"";cnt()}' +
+    'function msg(t){document.getElementById("msg").textContent=t}' +
+    'function load(){msg("読み込み中…");google.script.run.withSuccessHandler(function(d){show(d);msg("")}).withFailureHandler(function(e){msg(e.message)}).tagPanelLoad()}' +
+    'function save(next){' +
+    'var tags=boxes().filter(function(b){return b.checked}).map(function(b){return b.value});msg("保存中…");' +
+    'google.script.run.withSuccessHandler(function(d){if(next){show(d);msg("保存しました。次の行です")}else msg("保存しました")}).withFailureHandler(function(e){msg(e.message)}).tagPanelSave(row,tags,next,document.getElementById("note").value,document.getElementById("noteJa").value)}' +
+    'load();setInterval(function(){google.script.run.withSuccessHandler(function(r){if(r&&r!==row){if(dirty)msg("保存していない変更があります。保存するか、もう一度お店をクリックしてください");else load()}}).tagPanelRow()},1500);</script>';
+  SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(html).setTitle('タグを選ぶ'));
+}
+
+function tagRow_(t, row) {
+  var r = t.values[row - 2];
+  if (row < 2 || !r || !val_(t, r, 'name')) return { error: '左のシートで、お店の行をクリックしてください。' };
+  var tags = val_(t, r, 'tags').split(/[,、]/).map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+  return { row: row, name: val_(t, r, 'name'), tags: tags, note: val_(t, r, 'note'), noteJa: val_(t, r, 'noteJa') };
+}
+
+// 右側の画面から呼ばれる（名前の最後に _ を付けない）
+function activeRow_() {
+  var sh = SpreadsheetApp.getActiveSheet();
+  var c = sh.getCurrentCell ? sh.getCurrentCell() : null;
+  return (c || sh.getActiveCell()).getRow();
+}
+
+function tagPanelRow() { return activeRow_(); }
+
+function tagPanelLoad() {
+  var t = table_();
+  return tagRow_(t, activeRow_());
+}
+
+function tagPanelSave(row, tags, next, note, noteJa) {
+  var t = table_();
+  need_(t, ['tags']);
+  if (!row) row = activeRow_();
+  if (row < 2 || !t.values[row - 2] || !val_(t, t.values[row - 2], 'name')) throw new Error('左のシートで、お店の行をクリックしてください。');
+  var keep = TAGS.filter(function (k) { return tags.indexOf(k) >= 0; });
+  // 確認した印に、タグとひとことの黄色（AIの下書き）を消す
+  t.sh.getRange(row, t.col.tags + 1).setValue(keep.join(', ')).setBackground(null);
+  t.values[row - 2][t.col.tags] = keep.join(', ');
+  if (t.col.note !== undefined && note !== undefined) {
+    t.sh.getRange(row, t.col.note + 1).setValue(String(note).trim()).setBackground(null);
+    t.values[row - 2][t.col.note] = String(note).trim();
+  }
+  if (t.col.noteJa !== undefined && noteJa !== undefined) {
+    t.sh.getRange(row, t.col.noteJa + 1).setValue(String(noteJa).trim());
+    t.values[row - 2][t.col.noteJa] = String(noteJa).trim();
+  }
+  if (!next) return tagRow_(t, row);
+  for (var r = row + 1; r <= t.values.length + 1; r++) {
+    if (val_(t, t.values[r - 2], 'name')) {
+      t.sh.setActiveRange(t.sh.getRange(r, t.col.tags + 1));
+      return tagRow_(t, r);
+    }
+  }
+  return { error: '最後の行です。' };
+}
+
+// ---------- 条件が揃った行を公開にする ----------
+function menuPublish() {
+  var ui = SpreadsheetApp.getUi(), t = table_();
+  need_(t, ['published', 'genre', 'tags', 'lat', 'lng']);
+  var ok = [], noTags = 0, noGenre = 0, noGeo = 0, closed = 0, unchecked = 0;
+  var n = Math.max(t.values.length, 1);
+  var bgT = t.sh.getRange(2, t.col.tags + 1, n, 1).getBackgrounds();
+  var bgN = t.col.note !== undefined ? t.sh.getRange(2, t.col.note + 1, n, 1).getBackgrounds() : [];
+  var yellow = function (bg, i) { return !!bg[i] && String(bg[i][0]).toLowerCase() === DRAFT_COLOR; };
+  t.values.forEach(function (r, i) {
+    if (!val_(t, r, 'name') || val_(t, r, 'published') === '公開') return;
+    var st = val_(t, r, 'status');
+    if (st === 'CLOSED_PERMANENTLY' || st === 'CLOSED_TEMPORARILY') { closed++; return; }
+    if (val_(t, r, 'genre') === '') { noGenre++; return; }
+    if (val_(t, r, 'lat') === '' || val_(t, r, 'lng') === '') { noGeo++; return; }
+    if (val_(t, r, 'tags') === '') { noTags++; return; }
+    if (yellow(bgT, i) || yellow(bgN, i)) { unchecked++; return; }   // AIの下書きのまま（まだ確認していない）
+    ok.push(i);
+  });
+  var msg = ok.length + '件を「公開」にします。\n\n公開にしない行:\n・閉店: ' + closed + '件\n・ジャンルが空: ' + noGenre + '件\n・緯度経度が空: ' + noGeo + '件\n・タグが空: ' + noTags + '件\n・黄色（AIの下書きのまま、未確認）: ' + unchecked + '件\n\n続けますか？（シートの「公開」列が変わるだけで、サイトへの反映は、このあと「サイトに反映」を押したときです）';
+  if (ui.alert('まとめて公開', msg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  ok.forEach(function (i) { t.values[i][t.col.published] = '公開'; });
+  writeCols_(t, ['published']);
+  ui.alert('「公開」にしました: ' + ok.length + '件。\n「サイトに反映（開発用）」を押すと、サイトに出ます。');
+}
+
+// ---------- サイトに反映 ----------
+function syncDev() { sync_('dev'); }
+function syncProd() { sync_('prod'); }
+
+function sync_(env) {
+  var ui = SpreadsheetApp.getUi(), t = table_();
+  var rows = t.values.filter(function (r) { return String(r[t.col.name]).trim(); }).map(function (r) { return rowObj_(t, r); });
+  var label = env === 'dev' ? '開発用' : '本番';
+  if (ui.alert('サイトに反映（' + label + '）', rows.length + '件を ' + label + ' に反映します。\nシートにない場所は、サイトから削除されます。続けますか？', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  var res = call_(env, { action: 'sync', rows: rows });
+  if (res.code === 409 && res.body.error === 'too_many_deletions') {
+    if (ui.alert('確認', '今のデータ ' + res.body.existing + '件のうち ' + res.body.would_delete + '件が削除されます。\n間違いでなければ OK を押してください。', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+    res = call_(env, { action: 'sync', rows: rows, force: true });
+  }
+  if (res.code !== 200) { ui.alert('エラー（' + res.code + '）: ' + JSON.stringify(res.body).slice(0, 400)); return; }
+  var w = res.body.warnings || [];
+  ui.alert('反映しました（' + label + '）', '登録: ' + res.body.upserted + '件 / 削除: ' + res.body.deleted + '件 / サイトに公開: ' + res.body.published + '件' +
+    (w.length ? '\n\n確認してください（' + w.length + '件）:\n' + w.slice(0, 10).join('\n') : '') + '\n\nサイトには数分で反映されます。', ui.ButtonSet.OK);
+}

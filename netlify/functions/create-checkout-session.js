@@ -12,6 +12,7 @@
 
 const Stripe = require("stripe");
 const { FULL_PLAN, regionOf, minorUnits } = require("./lib/pricing");
+const { safeOrigin } = require("./lib/mail");
 
 // FULL PLAN is priced by number of days: one Stripe Price per day count and region (JPY for "jp",
 // USD for "intl"); the amounts are in lib/pricing.js and the Price IDs in STRIPE_PRICE_{JP|INTL}_FULL_<days>. 1 DAY PLAN and FULL LIST keep using the
@@ -130,13 +131,29 @@ exports.handler = async (event) => {
   if (payload.wl) successParams.set("wl", payload.wl);
 
   try {
-    const session = await stripe.checkout.sessions.create({
+    const params = {
       mode: "payment",
       line_items: lineItems,
+      // "Add promotion code" field on the Stripe page (codes are created in the Stripe dashboard)
+      allow_promotion_codes: true,
       // Always create a Stripe Customer (guest checkout, no login): lets us manage buyers in Stripe
       // and link them to public.customers by e-mail.
       customer_creation: "always",
-      allow_promotion_codes: true,
+      // Managed Payments (Stripe as the seller of record: it calculates, collects and files tax; +3.5% per sale).
+      // Used for the English / international site, where foreign VAT / GST would otherwise fall on us.
+      // The Japanese site is not charged through it (domestic tax is handled by us, and no extra fee).
+      // Products used with it need an eligible tax code (see scripts/create-sandbox-prices.js).
+      managed_payments: { enabled: region === "intl" },
+      // Refund terms right above the pay button (last confirmation step; see the Legal Notice page on the site).
+      // Stripe does not allow custom_text together with Managed Payments, so only the Japanese site (no Managed
+      // Payments) gets it; on the English site the terms are on the plan pages and in the Legal Notice.
+      ...(region === "intl" ? {} : {
+        custom_text: {
+          submit: {
+            message: "デジタル商品のため、旅程の保存後は返金できません（保存前は購入から14日以内、当方の不具合の場合は30日以内であれば返金します）。詳しくは postcardsguide.com の「特定商取引法に基づく表記」をご確認ください。",
+          },
+        },
+      }),
       success_url: `${origin}/?${successParams.toString()}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?stripe=cancel`,
       metadata: {
@@ -147,8 +164,21 @@ exports.handler = async (event) => {
         days: days ? String(days) : "",
         amount: amount ? String(amount) : "",
         currency: currency || "",
+        // The site the buyer pays on: the confirmation e-mail links back to it (only this project's own hosts).
+        origin: safeOrigin(origin) || "",
       },
-    });
+    };
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create(params);
+    } catch (err) {
+      // If Stripe refuses promotion codes for this kind of session (e.g. with Managed Payments), sell without the field
+      // rather than not at all.
+      if (!/promotion/i.test(String(err && (err.param || err.message)))) throw err;
+      console.warn("create-checkout-session: promotion codes refused, retrying without:", err.message);
+      delete params.allow_promotion_codes;
+      session = await stripe.checkout.sessions.create(params);
+    }
 
     return {
       statusCode: 200,

@@ -59,6 +59,7 @@ const upsert = (table, row, onConflict) =>
     Prefer: "resolution=merge-duplicates,return=representation",
   });
 const insert = (table, row) => call("POST", table, row, { Prefer: "return=representation" });
+const del = (query) => call("DELETE", query, undefined, { Prefer: "return=minimal" });
 const update = (query, patch) => call("PATCH", query, patch, { Prefer: "return=representation" });
 
-module.exports = { rpc, select, upsert, insert, update };
+module.exports = { rpc, select, upsert, insert, update, del };

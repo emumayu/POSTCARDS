@@ -16,6 +16,7 @@
 const Stripe = require("stripe");
 const db = require("./lib/supabase");
 const { syncPurchase, sessionIdForPaymentIntent } = require("./lib/purchase");
+const { sendReceiptOnce } = require("./lib/receipt");
 
 const HANDLED = new Set([
   "checkout.session.completed",
@@ -100,9 +101,11 @@ exports.handler = async (event) => {
       e.permanent = true;
       throw e;
     }
-    const { state } = await syncPurchase(stripe, sessionId, {
+    const { row, state } = await syncPurchase(stripe, sessionId, {
       asyncFailed: stripeEvent.type === "checkout.session.async_payment_failed",
     });
+    // Confirmation e-mail even if the buyer never came back to the site (once per purchase; failures are logged).
+    if (state === "paid" && row) await sendReceiptOnce(row, event).catch((e) => console.error("stripe-webhook: receipt", e.message));
     await finish(stripeEvent.id, true);
     console.log("stripe-webhook:", stripeEvent.type, sessionId, "->", state);
     return reply(200, { received: true, state });
