@@ -376,37 +376,47 @@ function menuTags() {
     '.bar{position:sticky;top:0;background:#fff;padding-bottom:6px;border-bottom:1px solid #ddd}</style>' +
     '<div class="bar"><div id="name">…</div><div id="cnt"></div>' +
     '<button onclick="save(false)">保存</button><button onclick="save(true)">保存して次の行へ</button>' +
-    '<button onclick="load()">今の行を読み込む</button><div id="msg"></div></div>' + boxes +
-    '<script>var row=0;function boxes(){return [].slice.call(document.querySelectorAll("input[type=checkbox]"))}' +
+    '<div id="msg"></div><div style="color:#777;font-size:12px">左のシートでお店の行をクリックすると、ここが切り替わります。</div></div>' + boxes +
+    '<script>var row=0,dirty=false;function boxes(){return [].slice.call(document.querySelectorAll("input[type=checkbox]"))}' +
     'function cnt(){document.getElementById("cnt").textContent="選んだタグ: "+boxes().filter(function(b){return b.checked}).length+"個（3〜5個がおすすめ）"}' +
-    'boxes().forEach(function(b){b.onchange=cnt});' +
-    'function show(d){if(d.error){document.getElementById("name").textContent=d.error;row=0;return}row=d.row;' +
+    'boxes().forEach(function(b){b.onchange=function(){dirty=true;cnt()}});' +
+    'function show(d){dirty=false;if(d.error){document.getElementById("name").textContent=d.error;row=0;return}row=d.row;' +
     'document.getElementById("name").textContent=d.row+"行目: "+d.name;boxes().forEach(function(b){b.checked=d.tags.indexOf(b.value)>=0});cnt()}' +
     'function msg(t){document.getElementById("msg").textContent=t}' +
     'function load(){msg("読み込み中…");google.script.run.withSuccessHandler(function(d){show(d);msg("")}).withFailureHandler(function(e){msg(e.message)}).tagPanelLoad()}' +
-    'function save(next){if(!row){msg("先にお店の行を選んで「今の行を読み込む」を押してください");return}' +
+    'function save(next){' +
     'var tags=boxes().filter(function(b){return b.checked}).map(function(b){return b.value});msg("保存中…");' +
     'google.script.run.withSuccessHandler(function(d){if(next){show(d);msg("保存しました。次の行です")}else msg("保存しました")}).withFailureHandler(function(e){msg(e.message)}).tagPanelSave(row,tags,next)}' +
-    'load();</script>';
+    'load();setInterval(function(){google.script.run.withSuccessHandler(function(r){if(r&&r!==row){if(dirty)msg("保存していない変更があります。保存するか、もう一度お店をクリックしてください");else load()}}).tagPanelRow()},1500);</script>';
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(html).setTitle('タグを選ぶ'));
 }
 
 function tagRow_(t, row) {
   var r = t.values[row - 2];
-  if (row < 2 || !r || !val_(t, r, 'name')) return { error: 'お店の行のセルを1つ選んで、「今の行を読み込む」を押してください。' };
+  if (row < 2 || !r || !val_(t, r, 'name')) return { error: '左のシートで、お店の行をクリックしてください。' };
   var tags = val_(t, r, 'tags').split(/[,、]/).map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
   return { row: row, name: val_(t, r, 'name'), tags: tags };
 }
 
 // 右側の画面から呼ばれる（名前の最後に _ を付けない）
+function activeRow_() {
+  var sh = SpreadsheetApp.getActiveSheet();
+  var c = sh.getCurrentCell ? sh.getCurrentCell() : null;
+  return (c || sh.getActiveCell()).getRow();
+}
+
+function tagPanelRow() { return activeRow_(); }
+
 function tagPanelLoad() {
   var t = table_();
-  return tagRow_(t, t.sh.getActiveCell().getRow());
+  return tagRow_(t, activeRow_());
 }
 
 function tagPanelSave(row, tags, next) {
   var t = table_();
   need_(t, ['tags']);
+  if (!row) row = activeRow_();
+  if (row < 2 || !t.values[row - 2] || !val_(t, t.values[row - 2], 'name')) throw new Error('左のシートで、お店の行をクリックしてください。');
   var keep = TAGS.filter(function (k) { return tags.indexOf(k) >= 0; });
   // 確認した印に、黄色（AIの下書き）を消す
   t.sh.getRange(row, t.col.tags + 1).setValue(keep.join(', ')).setBackground(null);
