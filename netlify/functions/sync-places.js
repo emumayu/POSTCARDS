@@ -179,7 +179,8 @@ async function instagram(rows) {
 // ---------- draft (tags + note by AI, reviewed by a human) ----------
 // Only the tags a visitor can pick on the site (both question screens); keep in step with TAGS in docs/sheet-sync/Code.gs
 const TAGS = ["morningperson", "slowafternoon", "localsonly", "neighborhoodlover", "designlover", "artandculture", "foodlover", "coffeeculture", "wellnessescape", "littleluxuries", "quiet", "slowmorning", "cozy", "dreamy", "moody", "romantic", "minimal", "design", "contemporary", "vintage", "nordic", "architecture", "wine", "fashion", "beautifulthings", "local", "citywanderer", "undertheradar", "nature"];
-const MODEL = "claude-sonnet-5-5";
+// Fast model: Netlify stops the function at 10 s, and picking tags from a fixed list does not need a large model
+const MODEL = "claude-haiku-5-5";
 const SYSTEM = `You write one record of a small, tasteful Tokyo travel guide called POSTCARDS. Readers are travellers who like design, quiet neighbourhoods, coffee and good food, and they want few, well-chosen places.
 Return ONLY a JSON object: {"tags":[...], "note":"..."}.
 - tags: 3 to 5 values chosen ONLY from this list: ${TAGS.join(", ")}. Choose what really fits the place; use "littleluxuries" only for genuinely upscale places; use "undertheradar" only for small or little-known places.
@@ -198,7 +199,7 @@ function pageText(html) {
 async function draftOne(r) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY is not set");
-  const info = pageText(await getHtml(r.website, 3000));
+  const info = pageText(await getHtml(r.website, 2500));
   const input = { name: clean(r.name), kind: clean(r.genre), neighbourhood: clean(r.area), website_text: info };
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 6500);
@@ -216,7 +217,11 @@ async function draftOne(r) {
   const text = (data.content || []).map((c) => c.text || "").join("");
   const m = text.match(/\{[\s\S]*\}/);
   let o;
-  try { o = JSON.parse(m ? m[0] : ""); } catch { return { key: r.key, ok: false, status: "BAD_OUTPUT" }; }
+  try { o = JSON.parse(m ? m[0] : ""); } catch {
+    // Slightly broken JSON (e.g. a stray quote in the note): read the tags and the note out of the text instead
+    const n = text.match(/"note"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+    o = { tags: TAGS.filter((t) => new RegExp(`"${t}"`).test(text)), note: n ? n[1] : "" };
+  }
   const tags = (Array.isArray(o.tags) ? o.tags : []).map((t) => clean(t).toLowerCase()).filter((t, i, a) => TAGS.includes(t) && a.indexOf(t) === i).slice(0, 5);
   const note = clean(o.note).slice(0, 200);
   if (!tags.length && !note) return { key: r.key, ok: false, status: "BAD_OUTPUT" };

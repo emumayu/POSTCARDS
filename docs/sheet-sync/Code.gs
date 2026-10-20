@@ -273,7 +273,7 @@ function stepDraft_(t, env) {
   targets = targets.slice(0, DRAFT_MAX);
   var done = 0, bad = 0, errors = 0, firstError = '';
   var marks = [];
-  chunks_(chunks_(targets, 5), 4).forEach(function (group) {   // 5件ずつ、4つ同時に
+  chunks_(chunks_(targets, 3), 3).forEach(function (group) {   // 3件ずつ、3つ同時に（多すぎるとAIが時間切れになる）
     var results = callMany_(env, group.map(function (chunk) {
       return { action: 'draft', rows: chunk.map(function (i) { var r = t.values[i]; return { key: r[t.col.key], name: r[t.col.name], genre: r[t.col.genre], area: t.col.area !== undefined ? r[t.col.area] : '', website: t.col.website !== undefined ? r[t.col.website] : '' }; }) };
     }));
@@ -375,18 +375,19 @@ function menuTags() {
     'button{margin:6px 6px 0 0;padding:8px 10px;font-size:13px;cursor:pointer}#msg{color:#1a73e8;min-height:18px;margin-top:6px}' +
     '.bar{position:sticky;top:0;background:#fff;padding-bottom:6px;border-bottom:1px solid #ddd}</style>' +
     '<div class="bar"><div id="name">…</div><div id="cnt"></div>' +
+    '<div style="margin-top:6px;color:#555">ひとこと</div><textarea id="note" rows="3" style="width:100%;box-sizing:border-box;font-size:13px"></textarea>' +
     '<button onclick="save(false)">保存</button><button onclick="save(true)">保存して次の行へ</button>' +
     '<div id="msg"></div><div style="color:#777;font-size:12px">左のシートでお店の行をクリックすると、ここが切り替わります。</div></div>' + boxes +
     '<script>var row=0,dirty=false;function boxes(){return [].slice.call(document.querySelectorAll("input[type=checkbox]"))}' +
     'function cnt(){document.getElementById("cnt").textContent="選んだタグ: "+boxes().filter(function(b){return b.checked}).length+"個（3〜5個がおすすめ）"}' +
-    'boxes().forEach(function(b){b.onchange=function(){dirty=true;cnt()}});' +
+    'boxes().forEach(function(b){b.onchange=function(){dirty=true;cnt()}});document.getElementById("note").oninput=function(){dirty=true};' +
     'function show(d){dirty=false;if(d.error){document.getElementById("name").textContent=d.error;row=0;return}row=d.row;' +
-    'document.getElementById("name").textContent=d.row+"行目: "+d.name;boxes().forEach(function(b){b.checked=d.tags.indexOf(b.value)>=0});cnt()}' +
+    'document.getElementById("name").textContent=d.row+"行目: "+d.name;boxes().forEach(function(b){b.checked=d.tags.indexOf(b.value)>=0});document.getElementById("note").value=d.note||"";cnt()}' +
     'function msg(t){document.getElementById("msg").textContent=t}' +
     'function load(){msg("読み込み中…");google.script.run.withSuccessHandler(function(d){show(d);msg("")}).withFailureHandler(function(e){msg(e.message)}).tagPanelLoad()}' +
     'function save(next){' +
     'var tags=boxes().filter(function(b){return b.checked}).map(function(b){return b.value});msg("保存中…");' +
-    'google.script.run.withSuccessHandler(function(d){if(next){show(d);msg("保存しました。次の行です")}else msg("保存しました")}).withFailureHandler(function(e){msg(e.message)}).tagPanelSave(row,tags,next)}' +
+    'google.script.run.withSuccessHandler(function(d){if(next){show(d);msg("保存しました。次の行です")}else msg("保存しました")}).withFailureHandler(function(e){msg(e.message)}).tagPanelSave(row,tags,next,document.getElementById("note").value)}' +
     'load();setInterval(function(){google.script.run.withSuccessHandler(function(r){if(r&&r!==row){if(dirty)msg("保存していない変更があります。保存するか、もう一度お店をクリックしてください");else load()}}).tagPanelRow()},1500);</script>';
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(html).setTitle('タグを選ぶ'));
 }
@@ -395,7 +396,7 @@ function tagRow_(t, row) {
   var r = t.values[row - 2];
   if (row < 2 || !r || !val_(t, r, 'name')) return { error: '左のシートで、お店の行をクリックしてください。' };
   var tags = val_(t, r, 'tags').split(/[,、]/).map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
-  return { row: row, name: val_(t, r, 'name'), tags: tags };
+  return { row: row, name: val_(t, r, 'name'), tags: tags, note: val_(t, r, 'note') };
 }
 
 // 右側の画面から呼ばれる（名前の最後に _ を付けない）
@@ -412,15 +413,19 @@ function tagPanelLoad() {
   return tagRow_(t, activeRow_());
 }
 
-function tagPanelSave(row, tags, next) {
+function tagPanelSave(row, tags, next, note) {
   var t = table_();
   need_(t, ['tags']);
   if (!row) row = activeRow_();
   if (row < 2 || !t.values[row - 2] || !val_(t, t.values[row - 2], 'name')) throw new Error('左のシートで、お店の行をクリックしてください。');
   var keep = TAGS.filter(function (k) { return tags.indexOf(k) >= 0; });
-  // 確認した印に、黄色（AIの下書き）を消す
+  // 確認した印に、タグとひとことの黄色（AIの下書き）を消す
   t.sh.getRange(row, t.col.tags + 1).setValue(keep.join(', ')).setBackground(null);
   t.values[row - 2][t.col.tags] = keep.join(', ');
+  if (t.col.note !== undefined && note !== undefined) {
+    t.sh.getRange(row, t.col.note + 1).setValue(String(note).trim()).setBackground(null);
+    t.values[row - 2][t.col.note] = String(note).trim();
+  }
   if (!next) return tagRow_(t, row);
   for (var r = row + 1; r <= t.values.length + 1; r++) {
     if (val_(t, t.values[r - 2], 'name')) {
@@ -435,7 +440,11 @@ function tagPanelSave(row, tags, next) {
 function menuPublish() {
   var ui = SpreadsheetApp.getUi(), t = table_();
   need_(t, ['published', 'genre', 'tags', 'lat', 'lng']);
-  var ok = [], noTags = 0, noGenre = 0, noGeo = 0, closed = 0;
+  var ok = [], noTags = 0, noGenre = 0, noGeo = 0, closed = 0, unchecked = 0;
+  var n = Math.max(t.values.length, 1);
+  var bgT = t.sh.getRange(2, t.col.tags + 1, n, 1).getBackgrounds();
+  var bgN = t.col.note !== undefined ? t.sh.getRange(2, t.col.note + 1, n, 1).getBackgrounds() : [];
+  var yellow = function (bg, i) { return !!bg[i] && String(bg[i][0]).toLowerCase() === DRAFT_COLOR; };
   t.values.forEach(function (r, i) {
     if (!val_(t, r, 'name') || val_(t, r, 'published') === '公開') return;
     var st = val_(t, r, 'status');
@@ -443,9 +452,10 @@ function menuPublish() {
     if (val_(t, r, 'genre') === '') { noGenre++; return; }
     if (val_(t, r, 'lat') === '' || val_(t, r, 'lng') === '') { noGeo++; return; }
     if (val_(t, r, 'tags') === '') { noTags++; return; }
+    if (yellow(bgT, i) || yellow(bgN, i)) { unchecked++; return; }   // AIの下書きのまま（まだ確認していない）
     ok.push(i);
   });
-  var msg = ok.length + '件を「公開」にします。\n\n公開にしない行:\n・閉店: ' + closed + '件\n・ジャンルが空: ' + noGenre + '件\n・緯度経度が空: ' + noGeo + '件\n・タグが空: ' + noTags + '件\n\n続けますか？（シートの「公開」列が変わるだけで、サイトへの反映は、このあと「サイトに反映」を押したときです）';
+  var msg = ok.length + '件を「公開」にします。\n\n公開にしない行:\n・閉店: ' + closed + '件\n・ジャンルが空: ' + noGenre + '件\n・緯度経度が空: ' + noGeo + '件\n・タグが空: ' + noTags + '件\n・黄色（AIの下書きのまま、未確認）: ' + unchecked + '件\n\n続けますか？（シートの「公開」列が変わるだけで、サイトへの反映は、このあと「サイトに反映」を押したときです）';
   if (ui.alert('まとめて公開', msg, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
   ok.forEach(function (i) { t.values[i][t.col.published] = '公開'; });
   writeCols_(t, ['published']);
