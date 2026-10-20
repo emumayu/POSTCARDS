@@ -85,12 +85,12 @@ function env_() { return PropertiesService.getDocumentProperties().getProperty('
 
 // ---------- シートの読み書き ----------
 function table_() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0], last = sh.getLastRow(), cols = sh.getLastColumn();
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet(), last = sh.getLastRow(), cols = sh.getLastColumn();
   var head = sh.getRange(1, 1, 1, cols).getValues()[0];
   var col = {};
   Object.keys(HEADERS).forEach(function (k) { var i = head.indexOf(HEADERS[k]); if (i >= 0) col[k] = i; });
   ['key', 'city', 'name'].forEach(function (k) {
-    if (col[k] === undefined) throw new Error('見出し「' + HEADERS[k] + '」が1行目にありません。');
+    if (col[k] === undefined) throw new Error('見出し「' + HEADERS[k] + '」が1行目にありません。お店のリストのタブを開いてから押してください。');
   });
   var values = last > 1 ? sh.getRange(2, 1, last - 1, cols).getValues() : [];
   var t = { sh: sh, col: col, values: values, cols: cols };
