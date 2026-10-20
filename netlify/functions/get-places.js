@@ -11,13 +11,14 @@ exports.handler = async (event) => {
   try {
     const [cities, rows] = await Promise.all([
       db.select("place_cities?select=city,intro,sort&order=sort.asc"),
-      db.select("places?published=eq.true&select=city,sort,name,genre,area,tags,note,lat,lng,price,best,visit_when,visit_order,pair,slot,instagram,website,map_url&order=city.asc,sort.asc&limit=5000"),
+      db.select("places?published=eq.true&select=city,sort,name,genre,area,tags,note,note_ja,lat,lng,price,best,visit_when,visit_order,pair,slot,instagram,website,map_url&order=city.asc,sort.asc&limit=5000"),
     ]);
     const out = {};
     for (const c of cities || []) out[c.city] = { intro: c.intro || "", spots: [] };
     for (const r of rows || []) {
       if (!out[r.city]) continue;
       const s = { name: r.name, genre: r.genre, area: r.area || "", tags: r.tags || [], note: r.note || "" };
+      if (r.note_ja) s.noteJa = r.note_ja; // shown on the Japanese site
       if (r.lat != null) s.lat = r.lat;
       if (r.lng != null) s.lng = r.lng;
       if (r.price) s.price = r.price;

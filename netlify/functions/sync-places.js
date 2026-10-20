@@ -21,7 +21,7 @@
 //     The sheet is the source of truth: rows are upserted by `key`, rows that are no longer in the sheet are deleted.
 //     A sync that would delete more than 30% of the places is refused unless force is true.
 //
-// Sheet row fields: key, kids, pets, city, name, area, genre, tags ("a,b"), note, price, instagram, website, map, lat, lng,
+// Sheet row fields: key, kids, pets, city, name, area, genre, tags ("a,b"), note, noteJa, price, instagram, website, map, lat, lng,
 //   published ("公開" = shown on the site), status, matched, placeId, best, when, order, pair, slot.
 
 const crypto = require("crypto");
@@ -234,6 +234,41 @@ async function draft(rows) {
   return json(200, { results });
 }
 
+// ---------- translate (English note → Japanese, for the Japanese site) ----------
+const JA_SYSTEM = `You translate one-line notes of a small, tasteful Tokyo travel guide called POSTCARDS into natural Japanese for Japanese readers.
+Return ONLY the Japanese sentence(s), nothing else.
+- Calm, plain, specific tone (です・ます調ではなく、短い常体や体言止め). Keep it short, like a friend's tip.
+- Keep proper names as they are usually written in Japan (e.g. 代々木公園, 清澄白河; shop names in their original spelling).
+- Do not add facts, superlatives or emoji.`;
+
+async function translateOne(r) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error("ANTHROPIC_API_KEY is not set");
+  const note = clean(r.note);
+  if (!note) return { key: r.key, ok: false, status: "NO_NOTE" };
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: ctl.signal,
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: MODEL, max_tokens: 200, system: JA_SYSTEM, messages: [{ role: "user", content: JSON.stringify({ name: clean(r.name), note }) }] }),
+    });
+  } finally { clearTimeout(timer); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(data.error && data.error.message) || ""}`.slice(0, 200));
+  const ja = (data.content || []).map((c) => c.text || "").join("").trim().replace(/^["「]|["」]$/g, "").slice(0, 200);
+  return ja ? { key: r.key, ok: true, note_ja: ja } : { key: r.key, ok: false, status: "BAD_OUTPUT" };
+}
+
+async function translate(rows) {
+  if (!Array.isArray(rows) || !rows.length || rows.length > 5) return json(400, { error: "rows: 1 to 5 per call" });
+  const results = await Promise.all(rows.map((r) => translateOne(r).catch((e) => ({ key: r.key, ok: false, status: "ERROR", error: e.message }))));
+  return json(200, { results });
+}
+
 // ---------- sync (sheet → Supabase) ----------
 function toDbRows(rows, warnings) {
   const seen = new Set();
@@ -253,7 +288,7 @@ function toDbRows(rows, warnings) {
     out.push({
       key, city, sort: perCity[city]++, name, genre: genre || "", area: clean(r.area),
       tags: clean(r.tags) ? clean(r.tags).split(/[,、]/).map((t) => t.trim()).filter(Boolean) : [],
-      note: clean(r.note), price: emptyToNull(r.price), lat: num(r.lat), lng: num(r.lng),
+      note: clean(r.note), note_ja: emptyToNull(r.noteJa), price: emptyToNull(r.price), lat: num(r.lat), lng: num(r.lng),
       instagram: igOf(r.instagram), website: urlOf(r.website),
       map_url: urlOf(r.map) && !/\/maps\/search\//.test(clean(r.map)) ? clean(r.map) : null,
       place_id: emptyToNull(r.placeId), business_status: emptyToNull(status), matched_name: emptyToNull(r.matched),
@@ -293,6 +328,7 @@ exports.handler = async (event) => {
     if (body.action === "details") return await details(body.rows);
     if (body.action === "instagram") return await instagram(body.rows);
     if (body.action === "draft") return await draft(body.rows);
+    if (body.action === "translate") return await translate(body.rows);
     if (body.action === "sync") return await sync(body.rows, body.force === true);
     return json(400, { error: "action must be enrich or sync" });
   } catch (err) {

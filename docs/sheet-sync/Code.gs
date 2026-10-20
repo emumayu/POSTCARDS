@@ -14,7 +14,7 @@
  */
 
 var HEADERS = {
-  key: 'キー', city: '都市', name: '店名', area: 'エリア', genre: 'ジャンル', tags: 'タグ', note: 'ひとこと',
+  key: 'キー', city: '都市', name: '店名', area: 'エリア', genre: 'ジャンル', tags: 'タグ', note: 'ひとこと', noteJa: 'ひとこと（日本語）',
   price: '価格帯', instagram: 'Instagram', website: '公式サイト', map: 'Googleマップ', lat: '緯度', lng: '経度',
   published: '公開', status: '営業状況', matched: '照合した店名', placeId: 'PlaceID',
   best: 'おすすめの人', when: '時間帯', order: 'おすすめ順', pair: 'あわせて', slot: '枠',
@@ -46,6 +46,7 @@ function onOpen() {
     .addItem('2. ジャンル・エリア・価格帯などを自動入力', 'menuDetails')
     .addItem('3. Instagramを公式サイトから探す', 'menuInstagram')
     .addItem('4. タグ・ひとことの下書き（AI）', 'menuDraft')
+    .addItem('5. ひとこと（日本語）をAIで訳す', 'menuTranslate')
     .addSeparator()
     .addItem('条件が揃った行をまとめて公開にする', 'menuPublish')
     .addItem('タグを選ぶ（チェックボックス）', 'menuTags')
@@ -229,6 +230,43 @@ function stepBars_(t, env) {
     (errors ? ' / エラー ' + errors + '件 ' + firstError : '') };
 }
 
+// ---------- 5. ひとこと（日本語）: 英語のひとことをAIで訳す ----------
+// 「ひとこと（日本語）」の列がなければ、「ひとこと」の右に作る
+function ensureNoteJaCol_() {
+  var sh = SpreadsheetApp.getActiveSheet(), cols = sh.getLastColumn();
+  var head = sh.getRange(1, 1, 1, cols).getValues()[0];
+  if (head.indexOf(HEADERS.noteJa) >= 0) return;
+  var i = head.indexOf(HEADERS.note);
+  if (i < 0) throw new Error('見出し「' + HEADERS.note + '」が1行目にありません。お店のリストのタブを開いてから押してください。');
+  sh.insertColumnAfter(i + 1);
+  sh.getRange(1, i + 2).setValue(HEADERS.noteJa);
+}
+
+function stepTranslate_(t, env) {
+  need_(t, ['note', 'noteJa']);
+  var targets = [];
+  t.values.forEach(function (r, i) { if (val_(t, r, 'name') && val_(t, r, 'note') !== '' && blank_(t, r, 'noteJa')) targets.push(i); });
+  var more = targets.length > DRAFT_MAX;
+  targets = targets.slice(0, DRAFT_MAX);
+  var done = 0, errors = 0, firstError = '';
+  chunks_(chunks_(targets, 5), 3).forEach(function (group) {   // 5件ずつ、3つ同時に
+    var results = callMany_(env, group.map(function (chunk) {
+      return { action: 'translate', rows: chunk.map(function (i) { var r = t.values[i]; return { key: r[t.col.key], name: r[t.col.name], note: r[t.col.note] }; }) };
+    }));
+    results.forEach(function (res, gi) {
+      if (res.code !== 200) { errors += group[gi].length; if (!firstError) firstError = JSON.stringify(res.body).slice(0, 200); return; }
+      res.body.results.forEach(function (x, j) {
+        var r = t.values[group[gi][j]];
+        if (!x.ok) { if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; } return; }
+        if (blank_(t, r, 'noteJa')) { r[t.col.noteJa] = x.note_ja; done++; }
+      });
+    });
+    SpreadsheetApp.getActive().toast('ひとこと（日本語）', '翻訳中', 3);
+  });
+  writeCols_(t, ['noteJa']);
+  return { name: 'ひとこと（日本語）', text: '訳した ' + done + '件' + (errors ? ' / エラー ' + errors + '件 ' + firstError : '') + (more ? '\n※まだ残りがあります。もう一度実行してください。' : '') };
+}
+
 // ---------- 3. Instagram（公式サイトのリンクから） ----------
 function stepInstagram_(t, env) {
   need_(t, ['instagram', 'website']);
@@ -309,13 +347,18 @@ function runSteps_(title, steps, confirmText) {
 }
 
 function runAll() {
-  runSteps_('店名だけで全部自動入力', [stepLookup_, stepDetails_, stepInstagram_, stepDraft_],
-    '空欄だけを埋めます（入力済みの欄は変更しません）。\n場所情報 → ジャンル・エリア・価格帯 → Instagram → タグ・ひとこと（AI下書き）の順に実行します。\n行が多いと数分かかります。続けますか？');
+  ensureNoteJaCol_();
+  runSteps_('店名だけで全部自動入力', [stepLookup_, stepDetails_, stepInstagram_, stepDraft_, stepTranslate_],
+    '空欄だけを埋めます（入力済みの欄は変更しません）。\n場所情報 → ジャンル・エリア・価格帯 → Instagram → タグ・ひとこと（AI下書き）→ ひとこと（日本語）の順に実行します。\n行が多いと数分かかります。続けますか？');
 }
 function menuLookup() { runSteps_('場所情報', [stepLookup_], '店名から Google で検索して、空欄だけを埋めます。続けますか？'); }
 function menuDetails() { runSteps_('ジャンル・エリア・価格帯', [stepDetails_], 'PlaceID のある行について、空欄だけを埋めます。続けますか？'); }
 function menuInstagram() { runSteps_('Instagram', [stepInstagram_], '公式サイトから Instagram のリンクを探して、空欄だけを埋めます。続けますか？'); }
 function menuBars() { runSteps_('バーの分類', [stepBars_], 'ジャンルが restaurant の店を Google で調べて、Googleの分類が「バー」の店だけ wine bar に変えます。\n居酒屋や、ほかのジャンルの店は変えません。続けますか？'); }
+function menuTranslate() {
+  ensureNoteJaCol_();
+  runSteps_('ひとこと（日本語）', [stepTranslate_], '英語のひとことがあって、日本語が空の行を、AIで日本語に訳します。\n入力済みの日本語は変えません。続けますか？');
+}
 function menuDraft() { runSteps_('タグ・ひとこと', [stepDraft_], 'ジャンルのある行について、タグとひとことの下書きを AI で作ります（黄色い欄になります）。続けますか？'); }
 
 // ---------- プルダウン（ジャンル・タグ・価格帯・公開） ----------
@@ -376,18 +419,19 @@ function menuTags() {
     '.bar{position:sticky;top:0;background:#fff;padding-bottom:6px;border-bottom:1px solid #ddd}</style>' +
     '<div class="bar"><div id="name">…</div><div id="cnt"></div>' +
     '<div style="margin-top:6px;color:#555">ひとこと</div><textarea id="note" rows="3" style="width:100%;box-sizing:border-box;font-size:13px"></textarea>' +
+    '<div style="margin-top:6px;color:#555">ひとこと（日本語）</div><textarea id="noteJa" rows="3" style="width:100%;box-sizing:border-box;font-size:13px"></textarea>' +
     '<button onclick="save(false)">保存</button><button onclick="save(true)">保存して次の行へ</button>' +
     '<div id="msg"></div><div style="color:#777;font-size:12px">左のシートでお店の行をクリックすると、ここが切り替わります。</div></div>' + boxes +
     '<script>var row=0,dirty=false;function boxes(){return [].slice.call(document.querySelectorAll("input[type=checkbox]"))}' +
     'function cnt(){document.getElementById("cnt").textContent="選んだタグ: "+boxes().filter(function(b){return b.checked}).length+"個（3〜5個がおすすめ）"}' +
-    'boxes().forEach(function(b){b.onchange=function(){dirty=true;cnt()}});document.getElementById("note").oninput=function(){dirty=true};' +
+    'boxes().forEach(function(b){b.onchange=function(){dirty=true;cnt()}});document.getElementById("note").oninput=function(){dirty=true};document.getElementById("noteJa").oninput=function(){dirty=true};' +
     'function show(d){dirty=false;if(d.error){document.getElementById("name").textContent=d.error;row=0;return}row=d.row;' +
-    'document.getElementById("name").textContent=d.row+"行目: "+d.name;boxes().forEach(function(b){b.checked=d.tags.indexOf(b.value)>=0});document.getElementById("note").value=d.note||"";cnt()}' +
+    'document.getElementById("name").textContent=d.row+"行目: "+d.name;boxes().forEach(function(b){b.checked=d.tags.indexOf(b.value)>=0});document.getElementById("note").value=d.note||"";document.getElementById("noteJa").value=d.noteJa||"";cnt()}' +
     'function msg(t){document.getElementById("msg").textContent=t}' +
     'function load(){msg("読み込み中…");google.script.run.withSuccessHandler(function(d){show(d);msg("")}).withFailureHandler(function(e){msg(e.message)}).tagPanelLoad()}' +
     'function save(next){' +
     'var tags=boxes().filter(function(b){return b.checked}).map(function(b){return b.value});msg("保存中…");' +
-    'google.script.run.withSuccessHandler(function(d){if(next){show(d);msg("保存しました。次の行です")}else msg("保存しました")}).withFailureHandler(function(e){msg(e.message)}).tagPanelSave(row,tags,next,document.getElementById("note").value)}' +
+    'google.script.run.withSuccessHandler(function(d){if(next){show(d);msg("保存しました。次の行です")}else msg("保存しました")}).withFailureHandler(function(e){msg(e.message)}).tagPanelSave(row,tags,next,document.getElementById("note").value,document.getElementById("noteJa").value)}' +
     'load();setInterval(function(){google.script.run.withSuccessHandler(function(r){if(r&&r!==row){if(dirty)msg("保存していない変更があります。保存するか、もう一度お店をクリックしてください");else load()}}).tagPanelRow()},1500);</script>';
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(html).setTitle('タグを選ぶ'));
 }
@@ -396,7 +440,7 @@ function tagRow_(t, row) {
   var r = t.values[row - 2];
   if (row < 2 || !r || !val_(t, r, 'name')) return { error: '左のシートで、お店の行をクリックしてください。' };
   var tags = val_(t, r, 'tags').split(/[,、]/).map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
-  return { row: row, name: val_(t, r, 'name'), tags: tags, note: val_(t, r, 'note') };
+  return { row: row, name: val_(t, r, 'name'), tags: tags, note: val_(t, r, 'note'), noteJa: val_(t, r, 'noteJa') };
 }
 
 // 右側の画面から呼ばれる（名前の最後に _ を付けない）
@@ -413,7 +457,7 @@ function tagPanelLoad() {
   return tagRow_(t, activeRow_());
 }
 
-function tagPanelSave(row, tags, next, note) {
+function tagPanelSave(row, tags, next, note, noteJa) {
   var t = table_();
   need_(t, ['tags']);
   if (!row) row = activeRow_();
@@ -425,6 +469,10 @@ function tagPanelSave(row, tags, next, note) {
   if (t.col.note !== undefined && note !== undefined) {
     t.sh.getRange(row, t.col.note + 1).setValue(String(note).trim()).setBackground(null);
     t.values[row - 2][t.col.note] = String(note).trim();
+  }
+  if (t.col.noteJa !== undefined && noteJa !== undefined) {
+    t.sh.getRange(row, t.col.noteJa + 1).setValue(String(noteJa).trim());
+    t.values[row - 2][t.col.noteJa] = String(noteJa).trim();
   }
   if (!next) return tagRow_(t, row);
   for (var r = row + 1; r <= t.values.length + 1; r++) {
