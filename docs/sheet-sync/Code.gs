@@ -23,7 +23,7 @@ var HEADERS = {
 var DRAFT_COLOR = '#fff2cc';   // AIの下書きを入れた欄の色（確認したら色を消してください）
 var DRAFT_MAX = 100;           // 下書きは1回に最大この件数
 // プルダウンの選択肢（サイトで使っている値。増やすときは、ここに足して「プルダウンを作る」を押し直す）
-var GENRES = ['cafe', 'bakery', 'restaurant', 'shop', 'hotel', 'museum', 'gallery', 'walk', 'architecture'];
+var GENRES = ['cafe', 'bakery', 'restaurant', 'wine bar', 'shop', 'hotel', 'museum', 'gallery', 'walk', 'architecture'];
 // タグは、サイトでお客さんが選べるものだけ（画面の順番どおり）。サイトの選択肢を変えたら、ここと sync-places.js の TAGS も合わせる
 var TAGS = [
   // 1つ目の画面（テーマ）: Slow mornings / Local life / Design & art / Food & coffee / Wellness & nature / Little luxuries

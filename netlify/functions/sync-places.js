@@ -94,7 +94,7 @@ const GENRE_BY_TYPE = {
   art_gallery: "gallery", art_studio: "gallery",
   park: "walk", garden: "walk", tourist_attraction: "walk", hiking_area: "walk", national_park: "walk", plaza: "walk",
   place_of_worship: "architecture", church: "architecture", hindu_temple: "architecture", buddhist_temple: "architecture", shinto_shrine: "architecture", historical_landmark: "architecture", monument: "architecture", cultural_landmark: "architecture",
-  bar: "restaurant", wine_bar: "restaurant", pub: "restaurant", izakaya: "restaurant", restaurant: "restaurant",
+  bar: "wine bar", wine_bar: "wine bar", pub: "wine bar", cocktail_bar: "wine bar", izakaya: "restaurant", restaurant: "restaurant",
 };
 function genreOf(primary, types) {
   const list = [primary].concat(types || []).filter(Boolean);
