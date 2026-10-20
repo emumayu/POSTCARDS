@@ -26,8 +26,13 @@ exports.handler = async (event) => {
       if (r.visit_order) s.order = r.visit_order;
       if (r.pair) s.pair = r.pair;
       if (r.slot) s.slot = r.slot;
-      if (r.instagram) s.instagram = r.instagram;
-      if (r.website) { s.website = r.website; s.url = r.website; } // `url` is what the hotel links on the trip page read
+      // Instagram as a full URL (the trip page links to it as is). A website field that is really an Instagram link
+      // becomes the Instagram link, so "Website" never opens Instagram.
+      const igHandle = (v) => String(v || "").trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/[\/?#].*$/, "").replace(/^@/, "");
+      const isIg = (v) => /^https?:\/\/(www\.)?instagram\.com\//i.test(String(v || "").trim());
+      const ig = igHandle(r.instagram) || (isIg(r.website) ? igHandle(r.website) : "");
+      if (ig && /^[A-Za-z0-9._]+$/.test(ig)) s.instagram = `https://www.instagram.com/${ig}/`;
+      if (r.website && !isIg(r.website)) { s.website = r.website; s.url = r.website; } // `url` is what the hotel links on the trip page read
       if (r.map_url) s.map = r.map_url;
       out[r.city].spots.push(s);
     }
