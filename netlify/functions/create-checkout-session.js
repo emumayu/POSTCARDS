@@ -131,9 +131,11 @@ exports.handler = async (event) => {
   if (payload.wl) successParams.set("wl", payload.wl);
 
   try {
-    const session = await stripe.checkout.sessions.create({
+    const params = {
       mode: "payment",
       line_items: lineItems,
+      // "Add promotion code" field on the Stripe page (codes are created in the Stripe dashboard)
+      allow_promotion_codes: true,
       // Always create a Stripe Customer (guest checkout, no login): lets us manage buyers in Stripe
       // and link them to public.customers by e-mail.
       customer_creation: "always",
@@ -165,7 +167,18 @@ exports.handler = async (event) => {
         // The site the buyer pays on: the confirmation e-mail links back to it (only this project's own hosts).
         origin: safeOrigin(origin) || "",
       },
-    });
+    };
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create(params);
+    } catch (err) {
+      // If Stripe refuses promotion codes for this kind of session (e.g. with Managed Payments), sell without the field
+      // rather than not at all.
+      if (!/promotion/i.test(String(err && (err.param || err.message)))) throw err;
+      console.warn("create-checkout-session: promotion codes refused, retrying without:", err.message);
+      delete params.allow_promotion_codes;
+      session = await stripe.checkout.sessions.create(params);
+    }
 
     return {
       statusCode: 200,
