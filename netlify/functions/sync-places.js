@@ -177,7 +177,8 @@ async function instagram(rows) {
 }
 
 // ---------- draft (tags + note by AI, reviewed by a human) ----------
-const TAGS = ["local", "design", "designlover", "cozy", "quiet", "coffeeculture", "contemporary", "citywanderer", "undertheradar", "littleluxuries", "artandculture", "foodlover", "creativeescape", "architecture", "minimal", "wine", "romantic", "romanticescape", "slowafternoon", "neighborhoodlover", "nature", "analog", "slowmorning", "morningperson", "nordic", "wellnessescape", "fashion"];
+// Only the tags a visitor can pick on the site (both question screens); keep in step with TAGS in docs/sheet-sync/Code.gs
+const TAGS = ["morningperson", "slowafternoon", "localsonly", "neighborhoodlover", "designlover", "artandculture", "foodlover", "coffeeculture", "wellnessescape", "littleluxuries", "quiet", "slowmorning", "cozy", "dreamy", "moody", "romantic", "minimal", "design", "contemporary", "vintage", "nordic", "architecture", "wine", "fashion", "beautifulthings", "local", "citywanderer", "undertheradar", "nature"];
 const MODEL = "claude-sonnet-5-5";
 const SYSTEM = `You write one record of a small, tasteful Tokyo travel guide called POSTCARDS. Readers are travellers who like design, quiet neighbourhoods, coffee and good food, and they want few, well-chosen places.
 Return ONLY a JSON object: {"tags":[...], "note":"..."}.

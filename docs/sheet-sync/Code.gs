@@ -24,9 +24,18 @@ var DRAFT_COLOR = '#fff2cc';   // AIの下書きを入れた欄の色（確認�
 var DRAFT_MAX = 100;           // 下書きは1回に最大この件数
 // プルダウンの選択肢（サイトで使っている値。増やすときは、ここに足して「プルダウンを作る」を押し直す）
 var GENRES = ['cafe', 'bakery', 'restaurant', 'shop', 'hotel', 'museum', 'gallery', 'walk', 'architecture'];
-var TAGS = ['local', 'design', 'designlover', 'cozy', 'quiet', 'coffeeculture', 'contemporary', 'citywanderer', 'undertheradar',
-  'littleluxuries', 'artandculture', 'foodlover', 'creativeescape', 'architecture', 'minimal', 'wine', 'romantic', 'romanticescape',
-  'slowafternoon', 'neighborhoodlover', 'nature', 'analog', 'slowmorning', 'morningperson', 'nordic', 'wellnessescape', 'fashion'];
+// タグは、サイトでお客さんが選べるものだけ（画面の順番どおり）。サイトの選択肢を変えたら、ここと sync-places.js の TAGS も合わせる
+var TAGS = [
+  // 1つ目の画面（テーマ）: Slow mornings / Local life / Design & art / Food & coffee / Wellness & nature / Little luxuries
+  'morningperson', 'slowafternoon', 'localsonly', 'neighborhoodlover', 'designlover', 'artandculture', 'foodlover', 'coffeeculture', 'wellnessescape', 'littleluxuries',
+  // 2つ目の画面: Mood
+  'quiet', 'slowmorning', 'cozy', 'dreamy', 'moody', 'romantic',
+  // Aesthetic
+  'minimal', 'design', 'contemporary', 'vintage', 'nordic', 'architecture',
+  // Things I love（coffeeculture / foodlover / artandculture は上にあり）
+  'wine', 'fashion', 'beautifulthings',
+  // Way I travel（neighborhoodlover / littleluxuries は上にあり）
+  'local', 'citywanderer', 'undertheradar', 'nature'];
 var PRICES = ['free', '¥', '¥¥', '¥¥¥', '¥¥¥¥'];
 
 function onOpen() {
@@ -282,6 +291,28 @@ function menuDraft() { runSteps_('タグ・ひとこと', [stepDraft_], 'ジャ�
 function menuDropdowns() {
   var ui = SpreadsheetApp.getUi(), t = table_();
   need_(t, ['genre', 'tags', 'price', 'published']);
+  // 今あるタグから、サイトで選べないもの（creativeescape など）を外し、区切りを「, 」にそろえる
+  var removed = {}, changedRows = 0;
+  t.values.forEach(function (r) {
+    var cur = val_(t, r, 'tags');
+    if (!cur) return;
+    var keep = [];
+    cur.split(/[,、]/).map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean).forEach(function (s) {
+      if (TAGS.indexOf(s) < 0) { removed[s] = (removed[s] || 0) + 1; return; }
+      if (keep.indexOf(s) < 0) keep.push(s);
+    });
+    var next = keep.join(', ');
+    if (next !== cur) { r[t.col.tags] = next; changedRows++; }
+  });
+  var removedText = Object.keys(removed).map(function (k) { return k + '（' + removed[k] + '）'; }).join('、');
+  if (removedText && ui.alert('タグの整理',
+      'サイトで選べないタグを、シートから外します:\n' + removedText + '\n\n続けますか？（「キャンセル」なら、外さずにプルダウンだけ作ります）',
+      ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) {
+    removedText = '';
+    changedRows = 0;
+  } else if (changedRows) {
+    writeCols_(t, ['tags']);
+  }
   var n = Math.max(t.sh.getMaxRows() - 1, 1);
   var list = function (k, items) {
     // 一覧にない値（古いタグなど）も消さずに残す（警告の印だけ出る）
@@ -293,7 +324,8 @@ function menuDropdowns() {
   list('price', PRICES);
   list('published', ['公開', '非公開']);
   ui.alert('プルダウンにしました',
-    'ジャンル・タグ・価格帯・公開の列で、セルの ▼ から選べます。\n\n' +
+    'ジャンル・タグ・価格帯・公開の列で、セルの ▼ から選べます。\n' +
+    (removedText ? 'サイトで選べないタグを外しました（' + changedRows + '行）: ' + removedText + '\n' : '') + '\n' +
     '【タグを複数選べるようにする（最初の1回だけ）】\n' +
     '1. タグの列のセルを1つ選んで、右クリック →「プルダウン」を押します。\n' +
     '2. 右に出た画面で「複数選択を許可」にチェックを入れて、「完了」を押します。', ui.ButtonSet.OK);
