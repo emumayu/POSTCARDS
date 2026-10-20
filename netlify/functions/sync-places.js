@@ -41,7 +41,7 @@ function authorized(event) {
 const clean = (v) => (v == null ? "" : String(v).trim());
 const num = (v) => { const n = parseFloat(clean(v)); return Number.isFinite(n) ? n : null; };
 const emptyToNull = (v) => { const s = clean(v); return s ? s : null; };
-const igOf = (v) => { const s = clean(v); return /^@?[A-Za-z0-9._]+$/.test(s) && s !== "要確認" ? s : /^https?:\/\/(www\.)?instagram\.com\//i.test(s) ? s : null; };
+const igOf = (v) => { const s = clean(v); return /^@?[A-Za-z0-9._]+$/.test(s) && !/\.php$/i.test(s) ? s : /^https?:\/\/(www\.)?instagram\.com\//i.test(s) ? s : null; };
 const urlOf = (v) => { const s = clean(v); return /^https?:\/\//i.test(s) ? s : null; };
 
 // ---------- enrich (Google Places API, Text Search "New") ----------
@@ -152,12 +152,13 @@ async function getHtml(url, ms) {
   } catch { return ""; } finally { clearTimeout(timer); }
 }
 
-const IG_SKIP = new Set(["p", "reel", "reels", "explore", "accounts", "about", "tv", "stories", "share", "sharer", "legal", "developer", "developers", "directory", "web", "embed", "instagram", "oauth", "privacy", "help", "login", "direct", "ar"]);
+const IG_SKIP = new Set(["p", "reel", "reels", "explore", "accounts", "about", "tv", "stories", "share", "sharer", "legal", "developer", "developers", "directory", "web", "embed", "instagram", "oauth", "privacy", "help", "login", "direct", "ar", "static", "graphql", "api"]);
 function instagramOf(html) {
   const count = new Map();
   for (const m of html.matchAll(/instagram\.com\/(?:_u\/)?([A-Za-z0-9._]{2,30})(?=[\/"'?#\s<\\])/gi)) {
     const h = m[1].replace(/\.+$/, "");
-    if (!h || IG_SKIP.has(h.toLowerCase())) continue;
+    // instagram.com/rsrc.php, /static/…, embed.js etc. are files of Instagram's embed script, not accounts
+    if (!h || IG_SKIP.has(h.toLowerCase()) || /\.(php|js|css|html?|png|jpe?g|gif|svg|webp|json)$/i.test(h)) continue;
     count.set(h, (count.get(h) || 0) + 1);
   }
   let best = "", n = 0;

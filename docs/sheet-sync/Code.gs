@@ -22,6 +22,12 @@ var HEADERS = {
 };
 var DRAFT_COLOR = '#fff2cc';   // AIの下書きを入れた欄の色（確認したら色を消してください）
 var DRAFT_MAX = 100;           // 下書きは1回に最大この件数
+// プルダウンの選択肢（サイトで使っている値。増やすときは、ここに足して「プルダウンを作る」を押し直す）
+var GENRES = ['cafe', 'bakery', 'restaurant', 'shop', 'hotel', 'museum', 'gallery', 'walk', 'architecture'];
+var TAGS = ['local', 'design', 'designlover', 'cozy', 'quiet', 'coffeeculture', 'contemporary', 'citywanderer', 'undertheradar',
+  'littleluxuries', 'artandculture', 'foodlover', 'creativeescape', 'architecture', 'minimal', 'wine', 'romantic', 'romanticescape',
+  'slowafternoon', 'neighborhoodlover', 'nature', 'analog', 'slowmorning', 'morningperson', 'nordic', 'wellnessescape', 'fashion'];
+var PRICES = ['free', '¥', '¥¥', '¥¥¥', '¥¥¥¥'];
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('POSTCARDS')
@@ -33,6 +39,7 @@ function onOpen() {
     .addItem('4. タグ・ひとことの下書き（AI）', 'menuDraft')
     .addSeparator()
     .addItem('条件が揃った行をまとめて公開にする', 'menuPublish')
+    .addItem('ジャンル・タグ・価格帯・公開をプルダウンにする', 'menuDropdowns')
     .addSeparator()
     .addItem('サイトに反映（開発用）', 'syncDev')
     .addItem('サイトに反映（本番）', 'syncProd')
@@ -188,6 +195,7 @@ function stepInstagram_(t, env) {
   need_(t, ['instagram', 'website']);
   var targets = [];
   t.values.forEach(function (r, i) { var ig = val_(t, r, 'instagram');
+    if (/\.php$/i.test(ig)) { r[t.col.instagram] = ''; ig = ''; }   // 以前の取り違え（@rsrc.php など）は消して探し直す
     if (val_(t, r, 'name') && (ig === '' || ig === '要確認') && val_(t, r, 'website') !== '') targets.push(i); });
   var found = 0, none = 0, errors = 0;
   var groups = chunks_(chunks_(targets, 10), 4);       // 10件ずつ、4つ同時に
@@ -235,7 +243,7 @@ function stepDraft_(t, env) {
       res.body.results.forEach(function (x, j) {
         var i = group[gi][j], r = t.values[i];
         if (!x.ok) { if (x.status === 'ERROR') { errors++; if (!firstError) firstError = x.error || ''; } else bad++; return; }
-        if (blank_(t, r, 'tags') && x.tags && x.tags.length) { r[t.col.tags] = x.tags.join(','); marks.push([i, 'tags']); }
+        if (blank_(t, r, 'tags') && x.tags && x.tags.length) { r[t.col.tags] = x.tags.join(', '); marks.push([i, 'tags']); }
         if (blank_(t, r, 'note') && x.note) { r[t.col.note] = x.note; marks.push([i, 'note']); }
         done++;
       });
@@ -269,6 +277,27 @@ function menuLookup() { runSteps_('場所情報', [stepLookup_], '店名から G
 function menuDetails() { runSteps_('ジャンル・エリア・価格帯', [stepDetails_], 'PlaceID のある行について、空欄だけを埋めます。続けますか？'); }
 function menuInstagram() { runSteps_('Instagram', [stepInstagram_], '公式サイトから Instagram のリンクを探して、空欄だけを埋めます。続けますか？'); }
 function menuDraft() { runSteps_('タグ・ひとこと', [stepDraft_], 'ジャンルのある行について、タグとひとことの下書きを AI で作ります（黄色い欄になります）。続けますか？'); }
+
+// ---------- プルダウン（ジャンル・タグ・価格帯・公開） ----------
+function menuDropdowns() {
+  var ui = SpreadsheetApp.getUi(), t = table_();
+  need_(t, ['genre', 'tags', 'price', 'published']);
+  var n = Math.max(t.sh.getMaxRows() - 1, 1);
+  var list = function (k, items) {
+    // 一覧にない値（古いタグなど）も消さずに残す（警告の印だけ出る）
+    t.sh.getRange(2, t.col[k] + 1, n, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(items, true).setAllowInvalid(true).build());
+  };
+  list('genre', GENRES);
+  list('tags', TAGS);
+  list('price', PRICES);
+  list('published', ['公開', '非公開']);
+  ui.alert('プルダウンにしました',
+    'ジャンル・タグ・価格帯・公開の列で、セルの ▼ から選べます。\n\n' +
+    '【タグを複数選べるようにする（最初の1回だけ）】\n' +
+    '1. タグの列のセルを1つ選んで、右クリック →「プルダウン」を押します。\n' +
+    '2. 右に出た画面で「複数選択を許可」にチェックを入れて、「完了」を押します。', ui.ButtonSet.OK);
+}
 
 // ---------- 条件が揃った行を公開にする ----------
 function menuPublish() {
