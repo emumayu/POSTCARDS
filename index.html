@@ -1415,6 +1415,13 @@ Error generating stack: `+l.message+`
 .pc .jr-info a { color:inherit; text-decoration:underline; text-underline-offset:3px; }
 @media (max-width:600px) { .pc .jr-body figure.jr-tall { width:86%; } .pc .jr-info dl { grid-template-columns:1fr; gap:2px; } .pc .jr-info dd { margin-bottom:12px; } }
 .pc .home3 .h3-j[data-act] { cursor:pointer; }
+
+/* Mobile: the Japanese subtitles on the inner screens follow the normal flow (the desktop rule centres them with
+   left:50% + translateX(-50%), which pushed them off the left edge on phones). */
+@media (max-width:760px) {
+  .pc .nk.ja [data-k$=".s"] { left:auto !important; right:auto !important; transform:none !important; font-size:16px !important; white-space:normal !important; max-width:100% !important; }
+  .pc .nk.ja[data-f="naka10"] [data-k$=".s"] { text-align:center; }
+}
 `;
 /* Bowl animation for the Making screen.
    The GIF is fetched once in advance (as soon as the visitor starts a plan), then every time the
